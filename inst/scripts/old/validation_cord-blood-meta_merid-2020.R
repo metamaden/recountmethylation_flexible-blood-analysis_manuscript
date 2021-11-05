@@ -105,10 +105,6 @@ mdv <- si2[which.cord.hm450k,]
 cginfo.study.fname <- "table1_validation2-cordblood-meta_merid-et-al-2020.csv"
 cginfo.study <- read.csv(cginfo.study.fname)
 
-# load epic clock study info
-lf <- list.files(); lff <- lf[grepl("haftorn", lf)]
-lht <- lapply(lff, function(fn){read.csv(fn)})
-
 #-----------------------------------
 # assign gestational ages, term info
 #-----------------------------------
@@ -292,191 +288,6 @@ dflm.fname <- "df-lm-ga_mval-2platform_cord-blood-val.rda"
 dflm.fpath <- file.path(save.dpath, dflm.fname)
 save(dflm, file = dflm.fpath)
 message("done")
-
-#-----------------
-# compare dmp sets
-#-----------------
-library(UpSetR)
-
-# load the probe annotations
-library(minfiData); library(minfiDataEPIC)
-data(RGsetEx); data(RGsetEPIC); 
-anno.hm450k <- getAnnotation(RGsetEx)
-anno.epic <- getAnnotation(RGsetEPIC)
-annof.inter <- anno.hm450k[rownames(anno.hm450k) %in% rownames(anno.epic),]
-
-# make dmp set upset plot -- figure 4a
-pdf.fname <- "upset_gest-age-dmps_3-studies.pdf"
-# filter significant probes
-dflm <- get(load("df-lm-ga_mval-2platform_cord-blood-val.rda"))
-dflm <- as.data.frame(dflm); dflm$padj <- p.adjust(dflm[,4], method = "bonferroni")
-nrow(dflm[dflm$padj <= 0.05,]) # [1] 1097
-dmp.new <- dflm[dflm$padj <= 0.05,]
-# halftorn dmps
-ht.cgidv <- unique(unlist(lapply(lht, function(lhi){lhi[,1]})))
-ht.cgidv <- intersect(ht.cgidv, rownames(annof.inter))
-length(ht.cgidv)
-length(intersect(ht.cgidv, rownames(dmp.new))) # [1] 58
-# merid dmps
-# get the validation matrix
-dmp1.fname <- "dmps1-nocomplications_cord-validation_merid-et-al-2020.csv"
-dmp2.fname <- "dmps2-allbirths_cord-validation_merid-et-al-2020.csv"
-dmp1.study <- read.csv(dmp1.fname); dmp2.study <- read.csv(dmp2.fname)
-dmpv.combined.study <- unique(c(dmp1.study[,1], dmp2.study[,1]))
-# get set data as list
-ldmp <- list()
-ldmp[["cord_blood DMPs"]] <- rownames(dmp.new)
-ldmp[["Clock DMPs (Haftorn et al 2021)"]] <- ht.cgidv
-ldmp[["Combined DMPs (Merid et al 2020)"]] <- dmpv.combined.study
-# plot results
-pdf(pdf.fname, 5.5, 2.7)
-upset(fromList(ldmp), order.by = "freq",
-      mainbar.y.label = paste0(paste0(rep("\n", 20),collapse =""), 
-                               "Intersection size (probes)"),
-      sets.x.label = "Total set size (probes)")
-dev.off()
-
-# make the probe type barplots -- figure 4b
-pdf.fname <- "barplot_islregions-anno_ga-dmps-3sets.pdf"
-# load the probe annotations
-annof.hm450k <- anno.hm450k[!rownames(anno.hm450k) %in% rownames(anno.epic),c(19,24,26)]
-annof.epic <- anno.epic[,c(19,22,24)]
-anno.all <- rbind(annof.hm450k, annof.epic)
-# get plot data for barplots
-isl.typev <- c("Island", "Shore", "Shelf", "OpenSea")
-dfp <- do.call(rbind, lapply(isl.typev, function(isl.type){
-  # isl.type <- "Island"
-  num.isl.bg <- nrow(annof.inter[grepl(isl.type, annof.inter$Relation_to_Island),])
-  fract.isl.bg <- num.isl.bg/nrow(annof.inter) # 0.305754
-  # new dmps
-  annoi.all <- anno.all[rownames(anno.all) %in% ldmp[[1]],]
-  num.isl <- nrow(annoi.all[grepl(isl.type, annoi.all$Relation_to_Island),])
-  fract.isl.dmp <- num.isl/length(ldmp[[1]])
-  # merid et al dmps
-  annoi.all <- anno.all[rownames(anno.all) %in% ldmp[[3]],]
-  num.isl.merid <- nrow(annoi.all[grepl(isl.type, annoi.all$Relation_to_Island),])
-  fract.isl.dmp.merid <- num.isl.merid/length(ldmp[[3]])
-  # haftorn et al dmps
-  ht.dmp <- intersect(ldmp[[2]], rownames(annof.inter))
-  annoi.all <- anno.all[rownames(anno.all) %in% ht.dmp,]
-  num.isl.haftorn <- nrow(annoi.all[grepl(isl.type, annoi.all$Relation_to_Island),])
-  fract.isl.dmp.haftorn <- num.isl.haftorn/length(ht.dmp)
-  # return results
-  dfpi <- data.frame(region = rep(isl.type, 4),
-                     dmp_set = c("Background", "cord_blood", 
-                                 "Merid et al 2020", "Haftorn et al 2021"),
-                     fract_region = c(fract.isl.bg, fract.isl.dmp, 
-                                      fract.isl.dmp.merid, 
-                                      fract.isl.dmp.haftorn),
-                     stringsAsFactors = FALSE)
-  return(dfpi)}))
-# make new region barplots
-dfp$`Probe set` <- dfp$dmp_set
-ggbp <- ggplot(dfp, aes(x = dmp_set, y = fract_region, fill = `Probe set`)) + 
-  geom_bar(stat = "identity") + theme_bw() + theme(axis.text.x = element_blank()) + 
-  xlab("Probe set") + ylab("Fraction of probes")
-bpfinal <- ggbp + facet_wrap(~region)
-pdf(pdf.fname, 5, 3); print(bpfinal); dev.off()
-
-# make dmp gene set upset plot -- figure 4c
-# get the plot name
-pdf.fname <- "upset_ga-dmp-genes_3-sources.pdf"
-# get plot data as list
-lgene <- list()
-lgene[["cord_blood DMP genes"]] <- unique(unlist(strsplit(anno.all[rownames(anno.all) %in% rownames(dmp.new),]$UCSC_RefGene_Name, ";")))
-lgene[["Clock DMP genes (Haftorn et al 2021)"]] <- unique(unlist(strsplit(anno.all[rownames(anno.all) %in% ht.cgidv,]$UCSC_RefGene_Name, ";"))) 
-lgene[["Combined DMP genes (Merid et al 2020)"]] <- unique(unlist(strsplit(anno.all[rownames(anno.all) %in% dmpv.combined.study,]$UCSC_RefGene_Name, ";")))   
-# save the upset plot
-pdf(pdf.fname, 5, 2.7)
-upset(fromList(lgene), order.by = "freq",
-      mainbar.y.label = paste0(paste0(rep("\n", 25),collapse =""), 
-                               "Intersection size (genes)"),
-      sets.x.label = "Total set size (genes)")
-dev.off()
-
-# check for region dmp enrichment
-dmpv <- intersect(ldmp$`cord_blood DMPs`, dmp1.study$CpGID)
-dmp1.3adj <- dmp1.study[dmp1.study[,21] == "yes",1]
-dmpv.3adj <- intersect(dmpv, dmp1.3adj)
-length(dmpv.3adj) # 246
-length(dmp1.3adj) # 1276
-nrow(dmp1.study) # 8899
-length(dmp1.3adj)/nrow(dmp1.study) # 0.1433869
-length(dmpv.3adj)/length(ldmp$`cord_blood DMPs`) # 0.2242479
-bt <- binom.test(x=length(dmpv.3adj), n=length(ldmp$`cord_blood DMPs`),
-           p=length(dmp1.3adj)/nrow(dmp1.study))
-format(bt$p.value, scientific=T)
-
-length(dmpv)/nrow(dmp1.study)
-length(dmpv)/nrow()
-
-#----------------------------------
-# supp table -- gestational age dmp 
-#----------------------------------
-# get cord blood dmps
-dflm <- get(load("df-lm-ga_mval-2platform_cord-blood-val.rda"))
-dflm <- as.data.frame(dflm); dflm$padj <- p.adjust(dflm[,4], method = "bonferroni")
-nrow(dflm[dflm$padj <= 0.05,]) # [1] 1097
-dmpdf.cb <- dflm[dflm$padj <= 0.05,]
-
-# get the merid dmps
-dmp1.fname <- "dmps1-nocomplications_cord-validation_merid-et-al-2020.csv"
-dmp2.fname <- "dmps2-allbirths_cord-validation_merid-et-al-2020.csv"
-dmp1.study <- read.csv(dmp1.fname); dmp2.study <- read.csv(dmp2.fname)
-dmpv.merid <- unique(c(dmp1.study$CpGID, dmp2.study$CpGID))
-
-# get the haftorn dmps
-lf <- list.files(); lff <- lf[grepl("haftorn", lf)]
-lht <- lapply(lff, function(fn){read.csv(fn)})
-dmpv.haf <- unique(c(lht[[1]][,1], lht[[2]][,1], lht[[3]][,1]))
-
-# get cgdf
-cgv.unique <- unique(c(rownames(dmpdf.cb), dmpv.merid, dmpv.haf))
-cgdf <- data.frame(cgid = cgv.unique)
-cgdf$is.cord.blood.dmp <- cgdf$is.merid.2020.dmp <- 
-  cgdf$is.haftorn.2021.dmp <- FALSE
-cgdf$cord.blood.ttest.estimate <- cgdf$cord.blood.ttest.std.err <-
-  cgdf$cord.blood.ttest.tvalue <- cgdf$cord.blood.ttest.pnominal <-
-  cgdf$cord.blood.ttests.padjusted <- 'NA'
-for(ri in seq(nrow(cgdf))){
-  cgi <- cgdf[ri,1]; message(cgi[1])
-  if(cgi %in% rownames(dmpdf.cb)){
-    dmpi <- dmpdf.cb[rownames(dmpdf.cb) == cgi,]
-    cgdf[ri,]$cord.blood.ttest.estimate <- round(dmpi$Estimate, 3)
-    cgdf[ri,]$cord.blood.ttest.std.err <- round(dmpi$`Std. Error`, 3)
-    cgdf[ri,]$cord.blood.ttest.tvalue <- round(dmpi$`t value`, 3)
-    cgdf[ri,]$cord.blood.ttest.pnominal <- format(dmpi$`Pr(>|t|)`,
-                                             scientific = 3, digits = 3)
-    cgdf[ri,]$cord.blood.ttests.padjusted <- format(dmpi$padj,
-                                               scientific = 3, digits = 3)
-    cgdf[ri,]$is.cord.blood.dmp <- TRUE}
-  if(cgi %in% dmpv.merid){cgdf$is.merid.2020.dmp <- TRUE}
-  if(cgi %in% dmpv.haf){cgdf$is.haftorn.2021.dmp <- TRUE}
-}
-
-# append anno
-# append probe annotations
-library(minfiData); library(minfiDataEPIC)
-data("RGsetEx"); data("RGsetEPIC")
-# bind anno for unique probes
-anno1 <- getAnnotation(RGsetEx); anno1 <- anno1[,c(19, 24, 25, 26)]
-anno2 <- getAnnotation(RGsetEPIC); anno2 <- anno2[,c(19, 22, 23, 24)]
-anno2 <- anno2[!rownames(anno2) %in% rownames(anno1),]
-anno <- rbind(anno1, anno2)
-anno <- anno[rownames(anno) %in% cgdf$cgid,]
-cgdf <- cgdf[cgdf$cgid %in% rownames(anno),]
-anno <- anno[order(match(rownames(anno), cgdf$cgid)),]
-identical(rownames(anno), cgdf$cgid) # TRUE
-cgdf$relation.to.island <- anno$Relation_to_Island
-cgdf$ucsc.gene.names <- anno$UCSC_RefGene_Name
-cgdf$ucsc.gene.groups <- anno$UCSC_RefGene_Group
-cgdf$ucsc.gene.acc <- anno$UCSC_RefGene_Accession
-
-# save
-st.fname <- "st_gest-age-dmp_all-dmp-info"
-write.csv(as.matrix(cgdf), file = paste0(st.fname, ".csv"))
-write.table(as.matrix(cgdf), file = paste0(st.fname, ".tsv"))
-save(cgdf, file = paste0(st.fname, ".rda"))
 
 #--------------
 # assess probes
@@ -711,15 +522,6 @@ dev.off()
 #----------------------
 # assess probe features
 #----------------------
-# get array probe annotations
-library(minfiData)
-library(minfiDataEPIC)
-data(RGsetEx); data(RGsetEPIC)
-dim(RGsetEx); dim(RGsetEPIC)
-anno <- getAnnotation(RGsetEx)
-anno <- anno[anno$Name %in% getAnnotation(RGsetEPIC)$Name,]
-dim(anno)
-
 # assess the validated DMPs
 annof <- anno[anno$Name %in% dmp.pos1.pos2,]
 nrow(annof) # 1005
@@ -727,11 +529,6 @@ table(annof$Relation_to_Island)
 # Island N_Shelf N_Shore OpenSea S_Shelf S_Shore 
 # 151      73     171     415      50     145
 nrow(annof[annof$UCSC_RefGene_Group == "",]) # 223
-415/1005 # percent opensea = 41%
-151/1005 # perc island = 15%
-(73+50)/1005 # perc shelf = 12%
-(171+145)/1005 # perc shore = 31%
-
 
 table(grepl(".*Body.*", annof$UCSC_RefGene_Group))
 # FALSE  TRUE 
@@ -769,12 +566,6 @@ genev <- unlist(sapply(annof$UCSC_RefGene_Name, function(x){
   unique(unlist(strsplit(x, ";")))}))
 dt.gene <- as.data.frame(table(genev))
 dt.gene <- dt.gene[rev(order(dt.gene[,2])),]
-nrow(dt.gene) # 604
-sum(dt.gene[,2]) # 823
-table(annof$UCSC_RefGene_Name=="")
-# FALSE  TRUE 
-# 782   223
-782/1005 # perc gene-mapping = 78%
 head(dt.gene)
 # genev Freq
 # 445 RAP1GAP2    7

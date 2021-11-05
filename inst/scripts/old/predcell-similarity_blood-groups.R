@@ -6,18 +6,16 @@
 #
 #
 
-library(ggplot); library(ggdist); library(gridExtra); library(cowplot)
+library(ggplot)
+library(ggdist)
+library(gridExtra)
+library(cowplot)
 
 #----------
 # load data
 #----------
-# load metadata
 md <- get(load("si1_all-md-2platforms.rda"))
 md2 <- get(load("si2_blood-md-2platforms.rda"))
-# get formatted groups
-md2$group <- ifelse(md2$blood_subgroup %in% c("NA", "all", "blood_spot"), "other/NOS",
-                    ifelse(grepl("^peripheral.*", md2$blood_subgroup), "PBMC",
-                           md2$blood_subgroup))
 
 #-----------------------
 # get predcell summaries
@@ -25,6 +23,7 @@ md2$group <- ifelse(md2$blood_subgroup %in% c("NA", "all", "blood_spot"), "other
 cnv <- colnames(md2)
 cnv.predcell <- cnv[grepl("^predcell.*", cnv)]
 catv <- gsub("predcell\\.", "", cnv.predcell)
+
 groupv <- c("all", "cord_blood", "whole_blood",
             "peripheral_blood_mononuclear_cells")
 
@@ -37,292 +36,67 @@ dfp <- do.call(rbind, lapply(catv, function(cati){
     matrix(c(rep(cati, length(dati)), 
              rep(groupi, length(dati)), 
              dati), ncol = 3)}))
-}))
-colnames(dfp) <- c("predcell", "subgroup", "fraction")
+})); colnames(dfp) <- c("predcell", "subgroup", "fraction")
 dfp <- as.data.frame(dfp, stringsAsFactors = F)
-dfp[,3] <- as.numeric(dfp[,3]); dfp$platform <- "2platforms"
+dfp[,3] <- as.numeric(dfp[,3]);dfp$platform <- "2platforms"
 
 # get data by platform
 dfp.plat <- do.call(rbind, lapply(catv, function(cati){
   do.call(rbind, lapply(groupv, function(groupi){
-    # get sample indices for groupi subgroup
-    if(groupi == "all"){
-      which.samp <- seq(nrow(md2))} else{
-        which.samp <- which(md2$blood_subgroup == groupi)}
-    md2f <- md2[which.samp,]
-    # predcell by platform
-    dfpi.plat2 <- do.call(rbind, lapply(c("hm450k", "epic"), function(platformi){
-      dati <- md2f[md2f$platform == platformi, paste0("predcell.", cati)]
-      data.frame(predcell = rep(cati, length(dati)), 
-                 subgroup = rep(groupi, length(dati)),
-                 fraction = dati, platform = rep(platformi, length(dati)),
-                 stringsAsFactors = F)
-      }))
-    return(dfpi.plat2)
-    }))
-  }))
-dfp.plat$fraction <- as.numeric(dfp.plat$fraction)
+    if(groupi == "all"){which.samp <- seq(nrow(md2))} else{
+      which.samp <- which(md2$blood_subgroup == groupi)}
+    do.call(rbind, lapply(c("hm450k", "epic"), function(platformi){
+      dati <- md2[which.samp & md2$platform == platformi, 
+                  paste0("predcell.", cati)]
+      matrix(c(rep(cati, length(dati)), 
+               rep(groupi, length(dati)), 
+               dati, rep(platformi, length(dati))), 
+             ncol = 4)}))}))}))
+colnames(dfp.plat) <- c("predcell", "subgroup", "fraction", "platform")
+dfp.plat <- as.data.frame(dfp.plat, stringsAsFactors = F)
 dfp.plat <- rbind(dfp.plat, dfp)
 
 # format vars
+dfp.plat[,3] <- as.numeric(dfp.plat[,3])
 dfp.plat[grepl("^peripheral.*", dfp.plat[,2]), 2] <- "PBMC"
 
-#---------------------
-# supp table -- ttests
-#---------------------
-# define the groups for iterations
-platv <- unique(dfp.plat$platform)
-cellv <- unique(dfp.plat$predcell)
-subgroupv <- unique(dfp.plat$subgroup)
+# cell fraction plots
 
-# get the ttests results
-table.fname <- "stable_ttest-predcell-results.csv"
-dftt <- do.call(rbind, lapply(cellv, function(ci){
-  dcell <- dfp.plat[dfp.plat$predcell == ci,]
-  dftt.plat <- do.call(cbind, lapply(subgroupv, function(si){
-    dfi <- dcell[dcell$subgroup == si,]
-    fv.hm450k <- dfi[dfi$platform=="hm450k",]$fraction
-    fv.epic <- dfi[dfi$platform=="epic",]$fraction
-    tt.plat <- t.test(fv.hm450k, fv.epic)
-    dftti <- data.frame(round(tt.plat$statistic, 3), 
-               format(tt.plat$p.value, scientific = T, digits = 3))
-    colnames(dftti) <- paste0("ttest_platform_",tolower(si), "_",c("tstat", "pvalue"))
-    return(dftti)}))
-  # get the cell type fractions by subgroup
-  dfilt <- dcell[dcell$platform == "2platforms",]
-  fract.all <- dfilt[dfilt$subgroup=="all",]$fraction
-  fract.pbmc <- dfilt[dfilt$subgroup=="PBMC",]$fraction
-  fract.cord <- dfilt[dfilt$subgroup=="cord_blood",]$fraction
-  fract.wb <- dfilt[dfilt$subgroup=="whole_blood",]$fraction
-  # get ttest results between subgroups
-  ttest.all.pbmc <- t.test(fract.all, fract.pbmc)
-  ttest.all.wb <- t.test(fract.all, fract.wb)
-  ttest.all.cord <- t.test(fract.all, fract.cord)
-  ttest.pbmc.cord <- t.test(fract.pbmc, fract.cord)
-  ttest.pbmc.wb <- t.test(fract.pbmc, fract.wb)
-  ttest.cord.wb <- t.test(fract.cord, fract.wb)
-  # append new ttest df
-  dftt.sg <- data.frame(ttest_all_pbmc_tstat = round(ttest.all.pbmc$statistic, 3),
-                        ttest_all_pbmc_pval = format(ttest.all.pbmc$p.value, scientific = T, digits = 3),
-                        ttest_all_wb_tstat = round(ttest.all.wb$statistic, 3),
-                        ttest_all_wb_pval = format(ttest.all.wb$p.value, scientific = T, digits = 3),
-                        ttest_all_cord_tstat = round(ttest.all.cord$statistic, 3),
-                        ttest_all_cord_pval = format(ttest.all.cord$p.value, scientific = T, digits = 3),
-                        ttest_pbmc_cord_tstat = round(ttest.pbmc.cord$statistic, 3),
-                        ttest_pbmc_cord_pval = format(ttest.pbmc.cord$p.value, scientific = T, digits = 3),
-                        ttest_pbmc_wb_tstat = round(ttest.pbmc.wb$statistic, 3),
-                        ttest_pbmc_wb_pval = format(ttest.pbmc.wb$p.value, scientific = T, digits = 3),
-                        ttest_cord_wb_tstat = round(ttest.cord.wb$statistic, 3),
-                        ttest_cord_wb_pval = format(ttest.cord.wb$p.value, scientific = T, digits = 3),
-                        stringsAsFactors = F)
-  dftt <- as.data.frame(cbind(dftt.sg, dftt.plat), stringsAsFactors = F)
-  dftt$celltype <- ci; return(dftt)}))
-write.csv(dftt, file = table.fname)
+# define color blind palette
+cbp1 <- c("#999999", "#E69F00", "#56B4E9", "#009E73",
+          "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
-# evaluate the ttests
-rownames(dftt) <- dftt$celltype
-dftt[,grepl("wb|whole", colnames(dftt)) & grepl("pval", colnames(dftt))]
-dftt[,grepl("pbmc", colnames(dftt)) & grepl("pval", colnames(dftt))]
-dftt[,grepl("all", colnames(dftt)) & grepl("pval", colnames(dftt))]
-dftt[,grepl("cord", colnames(dftt)) & grepl("pval", colnames(dftt))]
+groupv <- c("all", "cord_blood", "whole_blood","PBMC")
+lgg <- lapply(unique(dfp.plat$predcell), function(celli){
+  dfpi <- dfp.plat[dfp.plat$predcell == celli,]
+  # order dfpi on medians
+  mediv <- sapply(groupv, function(x){
+    which.dfpi <- dfpi[,2] == x & dfpi$platform == "2platforms"
+    median(dfpi[which.dfpi,3])})
+  dfpi[,2] <- factor(dfpi[,2], levels = names(mediv)[rev(order(mediv))])
+  # get plot object
+  ggplot(dfpi, aes(x = subgroup, y = fraction, fill = platform)) +
+    geom_violin(draw_quantiles = 0.5) + coord_flip() + theme_bw() + 
+    ggtitle(celli) + scale_fill_manual(values = cbp1) +
+    xlab("") + ylab("") + theme(legend.position = "none")
+}); names(lgg) <- unique(dfp.plat$predcell)
 
-# get the adjusted pvals
-table.fname <- "stable_ttest-predcell-padj.csv"
-dpval <- do.call(rbind, lapply(dftt$celltype, function(ci){
-  dftti <- dftt[dftt$celltype==ci,grepl("pval",colnames(dftt))]
-  data.frame(test = paste0(colnames(dftti), ";", ci), 
-             pval = as.numeric(dftti))}))
-dpval$padj <- p.adjust(dpval$pval, method = "bonferroni")
-dpval <- dpval[order(dpval$padj),]
-dpval$pval <- format(dpval$pval, scientific = T, digits = 3)
-dpval$padj <- format(dpval$padj, scientific = T, digits = 3)
-write.csv(dpval, file = table.fname)
+pleg <- ggplot(dfp.plat, aes(x = subgroup, y = fraction, fill = platform)) +
+  geom_violin(draw_quantiles = 0.5) + scale_fill_manual(values = cbp1)
+lgg[["legend"]] <- get_legend(pleg)
 
-#-----------------------------------------
-# supp figure -- heatmap of mean abs diffs
-#-----------------------------------------
-# define the groups for iterations
-platv <- unique(dfp.plat$platform)
-cellv <- unique(dfp.plat$predcell)
-subgroupv <- unique(dfp.plat$subgroup)
+# make the composite plot
+lm <- c(seq(1:6), rep(7,3))
+plot.str <- paste0("lgg[[", seq(length(lgg)), "]]", collapse = ",")
+plot.str <- paste0("grid.arrange(",plot.str,
+                   ", layout_matrix = matrix(c(",
+                   paste0(lm, collapse = ","),
+                   "),ncol=3), bottom = 'Fraction', ",
+                   "left = 'Blood group')")
 
-dfp.plat$fraction <- as.numeric(dfp.plat$fraction)
-
-# get the abs mean diffs
-dfp.diff <- do.call(rbind, lapply(cellv, function(ci){
-  dcell <- dfp.plat[dfp.plat$predcell == ci,]
-  dplat.diff <- do.call(rbind, lapply(subgroupv, function(si){
-    dfi <- dcell[dcell$subgroup == si,]
-    mean.hm450k <- mean(dfi[dfi$platform=="hm450k",]$fraction)
-    mean.epic <- mean(dfi[dfi$platform=="epic",]$fraction)
-    mean.diff.plat <- abs(mean.epic-mean.hm450k)
-    data.frame(celltype = ci, 
-               difflabel = paste0("platdiff_", tolower(si), "_epic-hm450k"),
-               mean_fract_diff = mean.diff.plat, stringsAsFactors = F)}))
-  # get the group diffs
-  ddiff <- dcell[dcell$platform == "2platforms",]
-  diff.all.pbmc <- abs(mean(ddiff[ddiff$subgroup=="all",]$fraction) - 
-    mean(ddiff[ddiff$subgroup=="PBMC",]$fraction))
-  diff.all.wb <- abs(mean(ddiff[ddiff$subgroup=="all",]$fraction) - 
-    mean(ddiff[ddiff$subgroup=="whole_blood",]$fraction))
-  diff.all.cord <- abs(mean(ddiff[ddiff$subgroup=="all",]$fraction) - 
-    mean(ddiff[ddiff$subgroup=="cord_blood",]$fraction))
-  diff.pbmc.cord <- abs(mean(ddiff[ddiff$subgroup=="PBMC",]$fraction) - 
-    mean(ddiff[ddiff$subgroup=="cord_blood",]$fraction))
-  diff.pbmc.wb <- abs(mean(ddiff[ddiff$subgroup=="PBMC",]$fraction) - 
-    mean(ddiff[ddiff$subgroup=="whole_blood",]$fraction))
-  diff.cord.wb <- abs(mean(ddiff[ddiff$subgroup=="cord_blood",]$fraction) - 
-    mean(ddiff[ddiff$subgroup=="whole_blood",]$fraction))
-  dsg.diff <- data.frame(celltype = rep(ci, 6),
-                         difflabel = c("sgdiff_all-pbmc", "sgdiff_all-whole_blood",
-                                       "sgdiff_all-cord_blood", "sgdiff_pbmc-cord_blood",
-                                       "sgdiff_pbmc-whole_blood", "sgdiff_cord_blood-whole_blood"),
-                         mean_fract_diff = c(diff.all.pbmc, diff.all.wb, diff.all.cord, 
-                                             diff.pbmc.cord, diff.pbmc.wb, diff.cord.wb),
-                         stringsAsFactors = FALSE)
-  df.diff <- rbind(dsg.diff, dplat.diff)
-  return(df.diff)
-}))
-
-# make the heatmap
-library(ggplot2)
-pdf.fname <- "sfig_ggtile-heatmap_predcell-mean-abs-diff.pdf"
-# format the plot data
-dfp.diff$label <- round(dfp.diff$mean_fract_diff, 3)
-# order the variables
-medv <- unlist(lapply(unique(dfp.diff$difflabel), function(dli){
-  median(dfp.diff[dfp.diff$difflabel==dli,]$mean_fract_diff)}))
-dfp.diff$difflabel <- factor(dfp.diff$difflabel, 
-                             levels = unique(dfp.diff$difflabel)[order(medv)])
-# get the plot object
-ggtile <- ggplot(dfp.diff, aes(x = difflabel, y = celltype)) +
-  geom_tile(aes(fill = mean_fract_diff)) + theme_bw() +
-  geom_text(aes(label = label), color = "white", size = 3) +
-  theme(axis.text.x = element_text(angle = 90,hjust=0.95,vjust=0.2)) +
-  scale_fill_gradient2(low = "blue", high = "red", 
-                       name = "Absolute\nmean\ndifference", midpoint = 0.3) +
-  xlab("Difference type") + ylab("Cell type")
-# print to pdf
-pdf(pdf.fname, 6.5, 4); print(ggtile); dev.off()
-
-
-
-# get the means
-dfmean <- do.call(rbind, lapply(cellv, function(ci){
-  dfpi <- dfp.plat[dfp.plat$predcell == ci,]
-  dfstat <- do.call(cbind, lapply(subgroupv, function(si){
-    dfpi.si <- dfpi[dfpi$subgroup == si,]
-    names.meanv <- paste0(si,"_mean_",platv)
-    meanv <- unlist(lapply(platv, function(pi){
-      mean(as.numeric(dfpi.si[dfpi.si$platform == pi,]$fraction), 
-           na.rm = T)}))
-    # get data as single row
-    dfstati <- as.data.frame(matrix(c(meanv), nrow = 1),
-                             stringsAsFactors = F) 
-    colnames(dfstati) <- names.meanv
-    return(dfstati)}))
-  dfstat$cell.type <- ci; return(dfstat)
-}))
-# get the difference of means
-dfmean.diff <- do.call(cbind, lapply(subgroupv, function(si){
-  dfmeani <- dfmean[,grepl(si, colnames(dfmean))]
-  dfmeani$platdiff <- dfmeani[,grepl("epic", colnames(dfmeani))] -
-    dfmeani[,grepl("hm450k", colnames(dfmeani))]
-  colnames(dfmeani)[ncol(dfmeani)] <- paste0("meandiff_", si, "_epic_hm450k")
-  return(dfmeani)
-}))
-# get the si diffs, 2platforms
-dfmeani <- dfmean[,grepl("2platforms", colnames(dfmean))]
-# all - pbmc
-dfmean.diff$meandiff_all_pbmc <- dfmeani[,grepl("all", colnames(dfmeani))] -
-  dfmeani[,grepl("peripheral.*", colnames(dfmeani))]
-# all - whole blood
-dfmean.diff$meandiff_all_whole_blood <- dfmeani[,grepl("all", colnames(dfmeani))] -
-  dfmeani[,grepl("whole", colnames(dfmeani))]
-# all - cord blood
-dfmean.diff$meandiff_all_cord_blood <- dfmeani[,grepl("all", colnames(dfmeani))] -
-  dfmeani[,grepl("cord", colnames(dfmeani))]
-# pbmc - cord blood
-dfmean.diff$meandiff_pbmc_cord_blood <- dfmeani[,grepl("peripheral.*", colnames(dfmeani))] -
-  dfmeani[,grepl("cord", colnames(dfmeani))]
-# pbmc - whole blood
-dfmean.diff$meandiff_pbmc_whole_blood <- dfmeani[,grepl("peripheral.*", colnames(dfmeani))] -
-  dfmeani[,grepl("whole", colnames(dfmeani))]
-# cord blood - pbmc
-dfmean.diff$meandiff_cord_whole_blood <- dfmeani[,grepl("cord", colnames(dfmeani))] -
-  dfmeani[,grepl("whole", colnames(dfmeani))]
-# assign cell types
-dfmean.diff$celltype <- cellv
-
-# get the ttest results
-
-# compare platform vs sample diffs
-dfmean.diff$meandiff_all_epic_hm450k
-dfmean.diff$meandiff_all_cord_blood
-dfmean.diff$meandiff_all_pbmc
-
-#----------------------
-# predcell violin plots
-#----------------------
-# make normal violin plots
-pdf.fname <- "fig1b_ggviolin_predcell-bysubgroup.pdf"
-dfp <- dfp.plat[dfp.plat$platform == "2platforms",]
-dfp$Subgroup <- dfp$subgroup
-my_comparisons <- list(c("PBMC", "all"), 
-                       c("PBMC", "cord_blood"), 
-                       c("PBMC", "whole_blood"))
-# order subgroups
-dfp$Subgroup <- factor(dfp$Subgroup, 
-                       levels = c("all", "whole_blood", 
-                                  "cord_blood", "PBMC"))
-# assign palette
-pal <- c("all" = "#0073C2FF", "cord_blood" = "#EFC000FF", 
-            "whole_blood" = "#868686FF", "PBMC" = "#CD534CFF")
-ggviolin <- ggplot(dfp, aes(x = Subgroup, y = fraction, colors = Subgroup)) + 
-  geom_violin(aes(fill = Subgroup), draw_quantiles = 0.5, trim = FALSE) + 
-  scale_fill_manual(values = pal) + theme_bw() + 
-  theme(axis.text.x = element_blank()) +
-  xlab("Subgroup") + ylab("Predicted fraction")
-plot.violin <- ggviolin + facet_wrap(~ predcell, nrow = 2)
-pdf(pdf.fname, 5, 3); print(plot.violin); dev.off()
-
-# make violin plots with ttest results
-library(ggpubr)
-predcell.plot.fname <- "ggviolin-predcell_4groups-2platforms.pdf"
-dfp <- dfp.plat[dfp.plat$platform == "2platforms",]
-dfp$Subgroup <- dfp$subgroup
-my_comparisons <- list(c("PBMC", "all"), 
-                       c("PBMC", "cord_blood"), 
-                       c("PBMC", "whole_blood"))
-predcell.plot <- ggviolin(dfp, x = "Subgroup", y = "fraction", facet.by = "predcell",
-          color = "Subgroup", fill = "Subgroup", palette = "jco")+ 
-  stat_compare_means(comparisons = my_comparisons, label.y = c(1, 1.2, 1.4),
-                     method = "t.test") +
-  theme(axis.text.x = element_text(angle = 90)) + ylim(0,1.5) +
-  ylab("Fraction of sample") + xlab("Blood sample type")
-pdf(predcell.plot.fname, 8, 6.5)
-print(predcell.plot); dev.off()
-
-#---------------------------------
-# ttests plots -- platform compare
-#---------------------------------
-
-predcell.plot.fname <- "ggviolin-predcell-compareplatforms_4groups-2platforms.pdf"
-
-dfp <- dfp.plat
-dfp$Subgroup <- dfp$subgroup
-my_comparisons <- list(c("hm450k", "epic"))
-
-predcell.plot <- ggviolin(dfp, x = "Subgroup", y = "fraction", facet.by = "predcell",
-                          group = "platform", color = "Subgroup", fill = "Subgroup", 
-                          palette = "jco") + 
-  stat_compare_means(comparisons = my_comparisons, label.y = c(1, 1.2, 1.4),
-                     method = "t.test") +
-  theme(axis.text.x = element_text(angle = 90)) + ylim(0,1.5) +
-  ylab("Fraction of sample") + xlab("Blood sample type")
-
-pdf(predcell.plot.fname, 8, 6.5)
-print(predcell.plot); dev.off()
+pdf("violin-comp_predcell-bloodgroups_2platforms.pdf", 10, 10)
+eval(parse(text = plot.str))
+dev.off()
 
 #-------------------
 # search index corrs

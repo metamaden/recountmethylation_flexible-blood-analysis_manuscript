@@ -11,22 +11,23 @@
 #
 
 library(ggplot2); library(cowplot); library(gridExtra)
+library(HDF5Array); library(minfi)
+library(methyPre); library(limma); library(sva)
 
 #----------
 # load data
 #----------
 # load data
 source("pwrEWAS_revised.R")
-# get bval stats, means and vars
-lgrp.stat.fpath <- "lstat-bv-cgoverlap_2platforms_blood-groups.rda"
-lgrp.stat <- get(load(lgrp.stat.fpath))
+
 # make save dir
-pdir.name <- "power_results"
-if(!dir.exists(pdir.name)){dir.create(pdir.name)}
+# pdir.name <- "power_results"
+# if(!dir.exists(pdir.name)){dir.create(pdir.name)}
 
 #-----------------
 # helper functions
 #-----------------
+# 
 lpwer_groupi_composite <- function(dfpl, groupi = "cord_blood", 
     xlab.str = "", ylab.str = "", grouplab = NULL){
     # make a composite plot for each delta, with legend
@@ -92,273 +93,297 @@ lpwer_80 <- function(dfpl, power.perc = 80){
     }
 }
 
-#------------------
-# do power analyses
-#------------------
-# do standard power analyses
-num.core <- 10; num.sim <- 100
-for(groupi in names(lgrp.stat)){
-    lgroupi <- lgrp.stat[[groupi]]
-    for(platformi in names(lgroupi)){
-        results.fname <- paste0("lpwr_platform-", platformi, "_blood-group-",
-            groupi, ".rda");results.fpath <- file.path(pdir.name, results.fname)
-        if(file.exists(results.fpath)){
-            message("Found results file ", results.fpath, ", skipping tests...")
-        } else{
-            message("Computing power tests for new file ", results.fpath)
-            lplatformi <- lgroupi[[platformi]]
-            dfi <- data.frame(mu = lplatformi$mean, 
-                var = lplatformi$var, stringsAsFactors = F)
-            lpwr <- pwrEWAS_itable(tissueType = dfi, minTotSampleSize = 50, 
-                maxTotSampleSize = 1100, SampleSizeSteps = 150, NcntPer = 0.5, 
-                targetDelta = c(0.05, 0.1, 0.2), J = 10000, targetDmCpGs = 500,  
-                detectionLimit = 0.01, DMmethod = "limma", FDRcritVal = 0.05, 
-                core = num.core, sims = num.sim, maxCnt.tau = 100)
-            save(lpwr, file = results.fpath)
-        }; message("Finished with results file ", results.fpath, "...")
-    }
+#-------------------------------
+# get the summary stats by group
+#-------------------------------
+lgrp.stat <- list()
+# load data
+
+# get dir paths
+save.dpath <- ""
+gr.fnv <- list.files()
+gr.fnv <- gr.fnv[grepl("^gr-adj.*", gr.fnv)]
+gr.fnv
+# [1] "gr-adj_epic_blood-group-all.rda"
+# [2] "gr-adj_epic_blood-group-cord_blood.rda"
+# [3] "gr-adj_epic_blood-group-peripheral_blood_mononuclear_cells.rda"
+# [4] "gr-adj_epic_blood-group-whole_blood.rda"
+# [5] "gr-adj_hm450k_blood-group-all.rda"
+# [6] "gr-adj_hm450k_blood-group-cord_blood.rda"
+# [7] "gr-adj_hm450k_blood-group-peripheral_blood_mononuclear_cells.rda"
+# [8] "gr-adj_hm450k_blood-group-whole_blood.rda"
+
+# load metadata
+md.fname <- "si2_blood-md-2platforms.rda"
+# md <- get(load(file.path(save.dpath, md.fname)))
+md <- get(load(md.fname))
+
+# load the detp tables
+# ptable1.path <- file.path(save.dpath, "detp-sstats_hm450k-blood-groups.rda")
+# ptable2.path <- file.path(save.dpath, "detp-sstats_epic-blood-groups.rda")
+ptable1.path <- "detp-sstats_hm450k-blood-groups.rda"
+ptable2.path <- "detp-sstats_epic-blood-groups.rda"
+ptable1 <- get(load(ptable1.path)); ptable2 <- get(load(ptable2.path))
+
+#-----------------------
+# get lgrf for each group
+#------------------------
+
+# manage groups
+# append md to colData, filter probes
+library(matrixStats); library(methyPre); data(chen_crxcg); lgrf <- list()
+liter <- list(); t1 <- Sys.time()
+save.fname <- "lstat-pwr_blood-groups_2platforms.rda"
+save.fpath <- file.path(save.fname)
+
+# process probes in batches, parallelized by gr object type
+parfun_dfstat <- function(typei, num.probes = 50000){
+  # grff <- grf.combined
+  if(typei == "hm450k"){grff <- grf.hm450k}
+  if(typei == "epic"){grff <- grf.epic}
+  if(typei == "combined"){grff <- grf.combined}
+  bval <- getBeta(grff); 
+  indexv <- seq(0, nrow(bval), num.probes); t1_stat <- Sys.time()
+  dfstat <- do.call(rbind, lapply(indexv, function(starti){
+    endi <- starti + num.probes - 1
+    endi <- ifelse(endi > nrow(bval), nrow(bval), endi)
+    mbval <- as.matrix(bval[starti:endi,])
+    rmi <- rowMeans(mbval); rvi <- rowVars(mbval)
+    message(typei, ":", starti, 
+            ", time stat: ", Sys.time() - t1_stat)
+    dfi <- data.frame(mean = rmi, var = rvi, 
+                      stringsAsFactors = F)
+    return(dfi)}))
+  return(dfstat)
 }
 
-# test lpwr 
-lpwr.fpath <- file.path(pdir.name, "lpwr_platform-combined_blood-group-all.rda")
-lpwr <- get(load(lpwr.fpath))
+# process group probes with batching, parallelization
+for(groupi in c("all", "whole_blood", "cord_blood", 
+                "peripheral_blood_mononuclear_cells")){
+  message("Beginning group ", groupi, ", time: ", Sys.time() - t1)
+  fnvi <- gr.fnv[grepl(groupi, gr.fnv)]
+  fnvi.hm450k <- fnvi[grepl("hm450k", fnvi)]
+  fnvi.epic <- fnvi[grepl("epic", fnvi)]
+  gr.hm450k <- HDF5Array::loadHDF5SummarizedExperiment(fnvi.hm450k)
+  gr.epic <- HDF5Array::loadHDF5SummarizedExperiment(fnvi.epic)
+  message("Appending colData...")
+  # hm450k
+  mdf <- md[md$platform == "hm450k",]
+  mdf <- mdf[rownames(mdf) %in% colnames(gr.hm450k),]
+  grf.hm450k <- gr.hm450k[,colnames(gr.hm450k) %in% rownames(mdf)]
+  mdf <- mdf[order(match(rownames(mdf), colnames(grf.hm450k))),]
+  cond <- identical(rownames(mdf), colnames(grf.hm450k))
+  if(cond){colData(grf.hm450k) <- DataFrame(mdf)}else{
+    stop("Failed to match md for gr.hm450k.")}
+  # epic
+  mdf <- md[md$platform == "epic",]
+  mdf <- mdf[rownames(mdf) %in% colnames(gr.epic),]
+  grf.epic <- gr.epic[,colnames(gr.epic) %in% rownames(mdf)]
+  mdf <- mdf[order(match(rownames(mdf), colnames(grf.epic))),]
+  cond <- identical(rownames(mdf), colnames(grf.epic))
+  if(cond){colData(grf.epic) <- DataFrame(mdf)}else{
+    stop("Failed to match md for gr.epic.")}
+  message("Filtering on probes...")
+  cname <- paste0("perc_above_01.", groupi)
+  cg.keep <- unique(c(ptable1[ptable1[,cname] == 0,1], 
+                      ptable2[ptable2[,cname] == 0,1]))
+  anno <- getAnnotation(gr.epic)
+  cg.sexchr <- rownames(anno[anno$chr %in% c("chrY", "chrX"),])
+  cg.keep <- cg.keep[!cg.keep %in% cg.sexchr]
+  cg.keep <- cg.keep[!cg.keep %in% chen.crxcg]
+  length(cg.keep)
+  # get the filtered grf objects
+  grf.hm450k <- grf.hm450k[rownames(grf.hm450k) %in% cg.keep,]
+  #lgrf[[groupi]][["hm450k"]] <- parfun_dfstat("hm450k")
+  grf.epic <- grf.epic[rownames(grf.epic) %in% cg.keep,]
+  #lgrf[[groupi]][["epic"]] <- parfun_dfstat("epic")
+  grf.combined <- combineArrays(grf.hm450k, grf.epic, 
+                                outType = "IlluminaHumanMethylation450k")
+  rm(grf.hm450k); rm(grf.epic)
+  lgrf[[groupi]][["combined"]] <- parfun_dfstat("combined")
+  rm(grf.combined)
+  #message("Final dim grf.hm450k: ", dim(grf.hm450k))
+  #message("Final dim grf.epic: ", dim(grf.epic))
+  #message("Final dim grf.combined: ", dim(grf.combined))
+  #message("Beginning probe stats calculations...")
+  #typev <- c("hm450k", "epic", "combined")
+  # names(lgrf[[groupi]]) <- typev
+  #message("dfstat hm450k dim: ", dim(lgrf[["hm450k"]]))
+  #message("dfstat epic dim: ", dim(lgrf[["epic"]]))
+  message("dfstat combined: ", dim(lgrf[["combined"]]))
+  message("Saving new data..."); save(lgrf, file = save.fpath)
+  message("Finished with group ", groupi, ", time: ", Sys.time() - t1)
+}
 
-# get the lpwr results as a df
-groupv <- c("all", "cord_blood", "peripheral_blood_mononuclear_cells", 
-    "whole_blood")
-platformv <- c("hm450k", "epic", "combined")
+# save results
+save(lgrf, file = save.fpath)
 
-df.pa <- do.call(rbind, lapply(groupv, function(groupi){
-    dfi <- do.call(rbind, lapply(platformv, function(platformi){
-        lpwr.fname <- paste0("lpwr_platform-",platformi,
-            "_blood-group-",groupi,".rda")
-        lpwr.fpath <- file.path(pdir.name, lpwr.fname)
-        lpwr <- get(load(lpwr.fpath))
-        dfi.pa <- as.data.frame(lpwr$powerArray)
-        dfi.pa$group <- groupi; dfi.pa$platform <- platformi 
-        return(dfi.pa)})); return(dfi)}))
+#---------------------------
+# power analyses at 2 scales
+#---------------------------
+# get bval stats, means and vars
+lgrf.fname <- "lstat-pwr_blood-groups_2platforms.rda"
+lgrf.fpath <- file.path(lgrf.fname)
+lgrf <- get(load(lgrf.fpath))
 
-df.mean <- do.call(rbind, lapply(groupv, function(groupi){
-    dfi <- do.call(rbind, lapply(platformv, function(platformi){
-        lpwr.fname <- paste0("lpwr_platform-",platformi,
-            "_blood-group-",groupi,".rda")
-        lpwr.fpath <- file.path(pdir.name, lpwr.fname)
-        lpwr <- get(load(lpwr.fpath))
-        dfi.mean <- as.data.frame(lpwr$meanPower)
-        dfi.mean$group <- groupi; dfi.mean$platform <- platformi 
-        return(dfi.mean)})); return(dfi)}))
+# helper function
+parfun_pwr <- function(level, dfi.stat, num.core = 1, num.sim = 100){
+  if(level == "zoom"){
+    message("Computing power tests at zoomed scale...")
+    lpwr <- pwrEWAS_itable(tissueType = dfi.stat, minTotSampleSize = 10, 
+                                maxTotSampleSize = 80, SampleSizeSteps = 5, NcntPer = 0.5, 
+                                targetDelta = c(0.05, 0.1, 0.2), J = 10000, targetDmCpGs = 500,  
+                                detectionLimit = 0.01, DMmethod = "limma", FDRcritVal = 0.05, 
+                                core = num.core, sims = num.sim, maxCnt.tau = 100)
+  } else{
+    message("Computing power tests at large scale...")
+    lpwr <- pwrEWAS_itable(tissueType = dfi.stat, minTotSampleSize = 20, 
+                                 maxTotSampleSize = 400, SampleSizeSteps = 50, 
+                                 NcntPer = 0.5, targetDelta = c(0.05, 0.1, 0.2), 
+                                 J = 10000, targetDmCpGs = 500, detectionLimit = 0.01, 
+                                 DMmethod = "limma", FDRcritVal = 0.05, core = num.core, 
+                                 sims = num.sim, maxCnt.tau = 100)
+  }; return(lpwr)
+}
 
-lpwr <- list(pa = df.pa, mean = df.mean)
-lpwr.fpath <- "lpwr_pwrmd-100sims-3delta-500dmp_2platforms_blood-groups.rda"
-save(lpwr, file = lpwr.fpath)
+# get group/type labels
+groupv <- c("cord_blood", "whole_blood", "all",
+            "peripheral_blood_mononuclear_cells")
+typev <- c("combined")
+catv <- paste0(rep(groupv, each = 1), ";", 
+               rep(typev, times = length(groupv)))
+# power analyses 1: large scale
+# do standard power analyses
+t1 <- Sys.time()
+lapply(catv, function(cati){
+  message("Working on category ", cati, "...")
+  groupi <- gsub(";.*", "", cati); typei <- gsub(".*;", "", cati)
+  results.fname <- paste0("lpwr-results_type-", typei, "_group-", groupi, ".rda")
+  results.fpath <- file.path(results.fname)
+  message("Getting the stats df..."); dfi.stat <- lgrf[[groupi]][[typei]]
+  colnames(dfi.stat) <- c("mu", "var"); levelv <- c("zoom", "large")
+  lpwr <- lapply(levelv, function(leveli){parfun_pwr(leveli, dfi.stat)})
+  names(lpwr) <- c("zoom", "large"); 
+  message("Saving results..."); save(lpwr, file = results.fpath)
+  message("Finished with ",groupi,", ", typei, ", time: ", Sys.time() - t1)
+})
 
-# transfer to local
-# scp -P 21747 metamaden@69.168.53.28:/home/metamaden/bioinfo_appnote/manuscript_results/lpwr_pwrmd-100sims-3delta-500dmp_2platforms_blood-groups.rda ./
+# load results and save in single list
+fnv <- paste0("lpwr-results_type-", gsub(".*;", "", catv), "_group-", 
+              gsub(";.*", "", catv), ".rda")
+lpwr <- lapply(fnv, function(fn){get(load(fn))})
+names(lpwr) <- gsub(";.*", "", catv)
+lpwr.fname <- "lpwr-results_gseadj-combined-2platforms_4groups.rda"
+save(lpwr, file = lpwr.fname)
 
-#--------------------------
-# get power composite fig 2
-#--------------------------
-lpwr <- get(load(lpwr.fpath))
-dfi <- lpwr[["pa"]]; dfi <- dfi[dfi$platform == "combined",]
+#------------------------------
+# get the composite power array
+#------------------------------
+# get results list
+lpwr.fname <- "lpwr-results_gseadj-combined-2platforms_4groups.rda"
+lpwr <- get(load(lpwr.fname))
 
-# save supp table
-st.fname <- "st_power-results-std_4groups_2platforms"
-save(dfi, file = paste0(st.fname, ".rda"))
-write.csv(dfi, file = paste0(st.fname, ".csv"))
+ppdf <- do.call(rbind, lapply(names(lpwr), function(groupi){
+  lpi <- lpwr[[groupi]]
+  ppdf <- do.call(rbind, lapply(lpi, function(da){
+    pa <- da$powerArray
+    paf <- as.data.frame(as.matrix(pa), stringsAsFactors = F)
+    colnames(paf) <- "alpha"; repv <- dimnames(pa)[[1]]
+    ssizev <- dimnames(pa)[[2]]; deltav <- dimnames(pa)[[3]]
+    paf$rep <- rep(repv, times = length(ssizev)*length(deltav))
+    paf$sample.size <- rep(rep(ssizev, each = length(repv)), times = length(deltav))
+    paf$delta <- rep(deltav, each = length(repv)*length(ssizev))
+    return(paf)})); ppdf$group <- groupi
+  return(ppdf)
+}))
+for(c in 1:4){ppdf[,c] <- as.numeric(ppdf[,c])}
+ppdf[grepl("^peripheral.*", ppdf$group),]$group <- "PBMC"
+ppdf[,5] <- as.factor(ppdf[,5])
 
-# make dft for plotting fig 2
-dft <- as.data.frame(matrix(nrow = 0, ncol = 5))
-colnames(dft) <- c("num.samples", "power", "rep", "delta", "group")
-for(groupi in unique(dfi$group)){
-    for(di in c("05", "1", "2")){
-        cnv.format <- gsub(".*\\.", "", colnames(dfi))
-        col.filt <- cnv.format == di; row.filt <- dfi$group == groupi
-        dffi <- dfi[row.filt, col.filt]
-        num.samplesv <- gsub("\\..*", "", colnames(dffi))
-        num.samplesv <- rep(num.samplesv, each = 100)
-        repv <- rep(seq(100), 8)
-        dati <- unlist(dffi)
-        dfbind <- data.frame(num.samples = num.samplesv,
-            power = dati, rep = repv, delta = di, group = groupi,
-            stringsAsFactors = F)
-        dft <- rbind(dft, dfbind)}}
-dft$num.samples <- as.numeric(dft$num.samples)
-dft[grepl("^peripheral.*", dft$group),]$group <- "PBMC"
+#--------------------
+# get composite plots
+#--------------------
+library(ggpubr); library(gridExtra); library(patchwork)
+# library(cowplot)
 
-lgg <- list()
-for(di in c("05", "1", "2")){
-    di.labstr <- ifelse(di == "05", "0.05",
-        ifelse(di == "1", "0.10", "0.20"))
-    xlab.str <- ifelse(di == "1", "Number of samples", "")
-    ylab.str <- ifelse(di == "05", "Power", "")
-    lgg[[di]] <- ggplot(dft[dft$delta == di,], 
-        aes(x=num.samples, y=power, color=group, group=group)) +
-        scale_fill_manual(values = cbp1.map) +
-        geom_hline(yintercept=0.8, color = "blue") +
-        geom_smooth(method = "loess") + theme_bw() +
-        ylim(0.5, 1) + xlim(0, 1200) +
-        xlab(xlab.str) + ylab(ylab.str) + 
-        ggtitle(paste0("Delta = ", di.labstr)) +
-        theme(legend.position = "none",
-            axis.text.x = element_text(angle = 90, hjust = 0.99, vjust = 0.2))}
+ymax.zoomv <- c(0.6, 0.6, 0.7)
+ymin.zoomv <- c(0, 0, 0.2)
+xmax.zoomv <- c(75, 75, 40)
+xmin.zoomv <- c(0, 0, 10)
+dv <- c(0.05, 0.1, 0.2)
+inset.leftv <- c(0.45, 0.35, 0.3)
+inset.topv <- c(0.63, 0.7, 0.7)
+xlabv <- c("Sample size", "Sample size", "Sample size")
+ylabv <- c("Alpha", "Alpha", "Alpha")
+ppdf$Subgroup <- ppdf$group
 
-dft$`Blood group` <- dft$group
-ploti <- ggplot(dft, 
-    aes(x=num.samples, y=power, color=`Blood group`, group=group)) + 
-    theme_bw() + geom_smooth(method = "loess")
-lgg[["legend"]] <- get_legend(ploti)
+# get the magnifying glass image
+# library(png); library(grid)
 
-lm <- matrix(c(rep(c(1,2,3), each = 2), 4), nrow = 1)
-pdf.fname <- "ggsmooth-composite_platform-combined_4groups.pdf"
-pdf(pdf.fname, 8.2, 2.5); 
-grid.arrange(lgg[[1]], lgg[[2]], lgg[[3]], lgg[[4]],
-    layout_matrix = lm)
-dev.off()
+library(cowplot)
+library(magick)
+library(ggsci)
 
-#-----------------------------
-# get power composite supp fig
-#-----------------------------
-# make dfp
-lpwr <- get(load(lpwr.fpath))
-dfp <- lpwr[["mean"]]; colnames(dfp)[1:3] <- paste0(c("05", "1", "2"), ".mean")
-dfp$num.samples <- rep(rownames(dfp)[1:8], 12)
-dfi <- lpwr[["pa"]]; deltav <- c("05", "1", "2")
-dfq <- do.call(cbind, lapply(deltav, function(deltai){
-    cnv <- gsub(".*\\.", "", colnames(dfi));which.deltai <- grepl(deltai, cnv)
-    dfii <- dfi[,which.deltai];colnames(dfii) <- gsub("\\..*","",colnames(dfii))
-    dfq.all <- as.data.frame(matrix(nrow = 0, ncol = 5))
-    colnames(dfq.all) <- c(paste0(deltai, ".", c("q25", "q75", "sd")), 
-        "group", "platform")
-    for(groupi in unique(dfi$group)){
-        for(platformi in unique(dfi$platform)){
-            samples.filt <- dfi$group == groupi & dfi$platform == platformi
-            dfii.filt <- dfii[which(samples.filt),]
-            q25v <- apply(dfii.filt, 2, function(x){quantile(x)[2]})
-            q75v <- apply(dfii.filt, 2, function(x){quantile(x)[4]})
-            sev <- apply(dfii.filt, 2, function(x){sd(x)})
-            dfq <- data.frame(q25v, q75v, sev, stringsAsFactors = F)            
-            colnames(dfq) <- paste0(deltai, ".", c("q25", "q75", "sd"))
-            rownames(dfq) <- colnames(dfii.filt)
-            dfq$group <- groupi; dfq$platform <- platformi
-            dfq.all <- rbind(dfq.all, dfq)}}
-    return(dfq.all)}))
-dfq <- dfq[,c(1:3, 6:8,11:15)]
-cond <- identical(dfp$platform, dfq$platform) & 
-    identical(dfp$group, dfq$group)
-if(!cond){stop("Couldn't match groups and platforms for dfp and dfq.")}
-dfp.final <- cbind(dfp, dfq)
-# save
-dfp.final.fpath <- "table_pwr-results-std_all-groups-2platforms"
-save(dfp.final, file = paste0(dfp.final.fpath, ".rda"))
-write.csv(dfp.final, file = paste0(dfp.final.fpath, ".csv"))
-
-# make plots
-dfp <- get(load(paste0(dfp.final.fpath, ".rda")))
-# dfp <- get(load(paste0(dfp.final.fpath, ".rda")))
-# make dfp long
-dfp.pre <- get(load(paste0(dfp.final.fpath, ".rda")))
-dfpl <- do.call(rbind, lapply(c("05", "1", "2"), function(di){
-    di.str.pattern <- paste0("^",di,"\\..*")
-    dfpi <- dfp.pre[,grepl(di.str.pattern, colnames(dfp.pre))]
-    dfpi$delta <- di; colnames(dfpi) <- gsub(".*\\.", "", colnames(dfpi))
-    dfpi$group <- dfp.pre$group; dfpi$platform <- dfp.pre$platform
-    dfpi$num.samples <- dfp.pre$num.samples
-    return(dfpi)}))
-dfpl$num.samples <- as.numeric(dfpl$num.samples)
-
-# single plot, group all, delta 0.05, all platforms
-groupi <- "all"; platformi <- "any"; deltai <- "05"
-which.dfpl <- dfpl$group=="all" & dfpl$delta=="05";dfp.plot<-dfpl[which.dfpl,]
-
-ploti <- ggplot(data=dfp.plot, aes(x=num.samples, y=mean, 
-    color=platform, group = platform)) +
-  geom_line() + geom_point() + 
-  geom_errorbar(data = dfp.plot, aes(ymin=mean-sd, ymax=mean+sd, color = platform), 
-    width=0.5, position=position_dodge(.9)) + 
+# define the palette
+pal <- c("#0073C2FF", "#EFC000FF", "#CD534CFF", "#868686FF")
+# coordinates for png images (magnifying glass, right arrpw)
+coordv <- list(c(xmin.mg = 60, xmax.mg = 100, ymin.mg = 0, ymax.mg = 0.15,
+                 xmin.ar = 95, xmax.ar = 140, ymin.ar = 0, ymax.ar = 0.20),
+               c(xmin.mg = 50, xmax.mg = 92, ymin.mg = 0, ymax.mg = 0.15,
+                 xmin.ar = 85, xmax.ar = 115, ymin.ar = 0, ymax.ar = 0.20),
+               c(xmin.mg = 30, xmax.mg = 70, ymin.mg = 0.20, ymax.mg = 0.35,
+                 xmin.ar = 60, xmax.ar = 95, ymin.ar = 0.20, ymax.ar = 0.40))
+# get list of plot objets
+lgg <- lapply(seq(3), function(ii){
+  deltai <- dv[ii]
+  ymax.zoom <- ymax.zoomv[ii]
+  xmax.zoom <- xmax.zoomv[ii]
+  ymin.zoom <- ymin.zoomv[ii]
+  xmin.zoom <- xmin.zoomv[ii]
+  coordvi <- coordv[[ii]]
+  ppdfi <- ppdf[ppdf$delta == deltai,]
+  plot.main <- ggplot(ppdfi, aes(x = sample.size, y = alpha, colours = Subgroup)) + 
+    annotate("rect", xmin = xmin.zoom, xmax = xmax.zoom, 
+             ymin = ymin.zoom, ymax = ymax.zoom, alpha = 0.34, fill = "grey") +
+    stat_smooth(aes(color = group), method="loess", se = F, alpha = 0.5) +
+    geom_hline(yintercept = 0.8, color = "black", linetype = "dashed") +
+    theme_bw() + xlim(0, 320) + ylim(0,0.95) + ggtitle(paste0("Delta = ", deltai)) +
+    theme(legend.position = "none") + xlab(xlabv[ii]) + ylab(ylabv[ii]) +
+    scale_colour_manual(values = pal) +
+    annotation_raster(readPNG("magnifying_glass_bgtransparent.png"), 
+                      xmin = coordvi[["xmin.mg"]], xmax = coordvi[["xmax.mg"]], 
+                      ymin = coordvi[["ymin.mg"]], ymax = coordvi[["ymax.mg"]]) +
+    annotation_raster(readPNG("rightarrow_bgtransparent.png"), 
+                      xmin = coordvi[["xmin.ar"]], xmax = coordvi[["xmax.ar"]], 
+                      ymin = coordvi[["ymin.ar"]], ymax = coordvi[["ymax.ar"]])
+    
+  plot.inset <- ggplot(ppdfi, aes(x = sample.size, y = alpha, colours = group)) + 
+    stat_smooth(aes(color = group), method="loess", se = F) +
+    theme_bw() + ylim(ymin.zoom, ymax.zoom) + xlim(xmin.zoom, xmax.zoom) + 
+    theme(legend.position = "none", axis.title.x = element_blank(),
+          axis.title.y = element_blank()) +
+    scale_colour_manual(values = pal)
+  
+  plot.composite <- plot.main #+ 
+    #inset_element(plot.inset, left = inset.leftv[ii], bottom = 0.02, 
+    #              right = 0.98, top = inset.topv[ii])
+  return(plot.composite)
+})
+# get legend
+ppdf$Subgroup <- ppdf$group
+lplot <- ggplot(ppdf, aes(x = sample.size, y = alpha)) + 
+  stat_smooth(aes(color = Subgroup), method="loess", se = F) + 
+  scale_colour_manual(values = pal) + 
   theme_bw()
-
-plot.fname <- paste0("lineplot-pwr_delta-",deltai,"_blood-group-",groupi,
-    "_platform-",platformi,".pdf")
-pdf(plot.fname, 5, 4); ploti; dev.off()
-
-# composite plot, group cord_blood, all platforms, all deltas
-lp <- list(); groupi <- "cord_blood"; dfpi <- dfpl[dfpl$group == groupi,]
-# get the legend plot
-lplot <- ggplot(data=dfpi[dfpi$delta == "05",], aes(x=num.samples, y=mean, 
-        color=platform, group = platform)) + geom_line() + geom_point() + 
-    geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd, color = platform), 
-        width=0.5, position=position_dodge(.9)) + theme_bw()
-legend <- get_legend(lplot)
-# get the composite plots
-for(di in c("05", "1", "2")){
-    di.form <- ifelse(di == "05", "0.05",
-        ifelse(di == "1", "0.10", "0.20"))
-    dfpi.plot <- dfpi[dfpi$delta == di,]
-    lp[[di]] <- ggplot(data=dfpi.plot, aes(x=num.samples, y=mean, 
-        color=platform, group = platform)) + geom_line() + geom_point() + 
-    geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd, color = platform), 
-        width=0.5, position=position_dodge(.9)) + theme_bw() +
-    ggtitle(paste0("Delta = ", di.form)) + theme(legend.position = "none") +
-    geom_hline(yintercept = 0.8, color = "blue")}
-pdf.fpath <- paste0("lineplot-pwr_delta-all_blood-group-",groupi,
-    "_platform-all.pdf")
-pdf(pdf.fpath, 10, 3)
-grid.arrange(lp[[1]], lp[[2]], lp[[3]], legend,
-    layout_matrix = matrix(c(1,2,3,4), nrow = 1))
+lgg[["legend"]] <- as_ggplot(get_legend(lplot))
+# make composite plot
+pdf.fname <- "ggsmooth-pwr_composite-3deltas_4groups-2platforms.pdf"
+pdf(pdf.fname, 6, 5)
+ggarrange(lgg[[1]], lgg[[2]], lgg[[3]], lgg[[4]], ncol = 2, nrow = 2)
 dev.off()
 
-# make composite of the group-wise plots
-llpwr <- list()
-for(ii in seq(4)){
-    groupi <- unique(dfpl$group)[ii]
-    grouplab.str <- ifelse(grepl("^peripheral.*", groupi), "PBMC", groupi)
-    llpwr[[groupi]] <- lpwer_groupi_composite(dfpl, groupi = groupi,
-        grouplab = grouplab.str)}
-lm <- matrix(c(1,2,3,14,4,5,6,7,8,9,10,7,11,12,13,14), 
-    byrow = T, nrow = 4)
-pdf.fpath <- "lplot-pwr-std_by-deltas_4groups_2platforms.pdf"
-pdf(pdf.fpath, 10, 10)
-grid.arrange(
-    llpwr[[1]][[1]], llpwr[[1]][[2]], llpwr[[1]][[3]], 
-    llpwr[[2]][[1]], llpwr[[2]][[2]], llpwr[[2]][[3]], llpwr[[2]][[4]], 
-    llpwr[[3]][[1]], llpwr[[3]][[2]], llpwr[[3]][[3]], 
-    llpwr[[4]][[1]], llpwr[[4]][[2]], llpwr[[4]][[3]], 
-    layout_matrix = lm, bottom = "Number of samples",
-    left = "Power")
-dev.off()
-
-# get the smooths for combined probes at each delta
-# define colorblind friendly palette
-cbp1 <- c("#999999", "#E69F00", "#56B4E9", "#009E73",
-          "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-platformi <- "combined"; di <- "05"
-which.dfpl <- dfpl$platform==platformi & dfpl$delta==di;
-dfp.plot <- dfpl[which.dfpl,]
-dfp.plot[grepl("^periph.*", dfp.plot$group),]$group <- "PBMC"
-
-ploti <- ggplot(data=dfp.plot, 
-    aes(x = num.samples, y = mean, color = group, group = group)) + 
-    geom_smooth(method = loess) + theme_bw() +
-    geom_hline(yintercept = 0.8, color = "blue") +
-    scale_fill_manual(values = cbp1)
-
-pdf("smooth-glm_exe.pdf"); ploti; dev.off()
-
-
-  geom_line() + geom_point() + 
-  geom_errorbar(data = dfp.plot, aes(ymin=mean-sd, ymax=mean+sd, color = platform), 
-    width=0.5, position=position_dodge(.9)) + 
-  theme_bw()
-
-
-# get prediction
-dfpl.filt <- dfpl$group == "cord_blood"
-dfpl.filt <- dfpl.filt & dfpl$platform == "hm450k"
-dfpl.filt <- dfpl.filt & dfpl$delta == "05"
-
-dii <- dfpl[dfpl.filt,]
-lm <- lm(num.samples ~ mean, data = dii)
-predict(lm, newdata = data.frame(mean = 0.80))
-
-predict.glm(glm(mean ~ num.samples, data = dii))
-
+# get individual plots
+fnv <- paste0("ggsmooth-pwr_delta-",c("05", "1", "2"),
+              "_4groups-2platforms.pdf")
+lapply(seq(length(fnv)), function(ii){
+  pdf.fname <- fnv[ii]; pdf(pdf.fname, 4, 3); print(lgg[[ii]]); dev.off()})
