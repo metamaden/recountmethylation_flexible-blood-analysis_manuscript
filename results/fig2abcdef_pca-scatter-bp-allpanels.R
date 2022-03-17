@@ -2,7 +2,8 @@
 
 # Author: Sean Maden
 #
-# Make Fig1 PCA scatter plots.
+# Make PCA scatter plots. Makes scatter plots and 95% confidence ellipses
+# for top variables explaining PCA variances.
 #
 
 
@@ -20,9 +21,16 @@ lpca1.fpath <- "lpca-mpc10-sd-av_fh10k-2plat-autodnam.rda"
 lpca <- get(load(lpca1.fpath)); dfp <- as.data.frame(t(lpca$mpc10))
 md.anova <- lpca$md # sample metadata
 
+#--------------
+# get plot data
+#--------------
 # get eigenvalues percent vector
-eigv <- lpca$pcsd^2; eigv.perc <- round(100*eigv/sum(eigv),2)
+eigv <- lpca$pcsd^2
+eigv.perc <- round(100*eigv/sum(eigv),2)
 
+#-----------------------------
+# format categorical variables
+#-----------------------------
 # format subgroup var
 dfp$subgroup <- md.anova$group
 dfp$Subgroup <- ifelse(dfp$subgroup == "other/NOS", "Other/NOS",
@@ -33,6 +41,9 @@ dfp$Subgroup <- ifelse(dfp$subgroup == "other/NOS", "Other/NOS",
 dfp$Platform <- md.anova$platform
 dfp$Platform <- ifelse(dfp$Platform == "epic", "EPIC", "HM450K")
 
+#----------------------------
+# format continuous variables
+#----------------------------
 # quantile cutoffs for cell fractions
 num.quant <- 5
 if(min(md.anova$predcell.CD4T) < 0){
@@ -126,48 +137,50 @@ get_ptplots <- function(dfp, varname, eigv.perc = eigv.perc,
   dev.off(); return(lpt)
 }
 
-#----------------------
-# subgroup scatterplots
-#----------------------
+#-----------------------
+# subgroup scatter plots
+#-----------------------
 # get scatterplot list
 lpt.pc1v2 <- list()
 pal <- c("Other/NOS" = "#3B3B3BFF", "Whole blood" = "#868686FF", 
          "Cord blood" = "#EFC000FF", "PBMC" = "#CD534CFF")
 
 lpt.group <- get_ptplots(dfp, "Subgroup", eigv.perc = eigv.perc, 
-                         pal = pal, fname = "fig2-pca-pt_subgroup.pdf")
+                         pal = pal, 
+                         fname = "fig2a_pca-pt-subgroup.pdf")
 
 #-------------------------------
 # epistructure pc1 scatter plots
 #-------------------------------
 dfp$`EPISTRUCTURE\nPC1 eigenvalue\nquantile` <- dfp$glint.epi.pc1.quantile
 lpt.group <- get_ptplots(dfp, "`EPISTRUCTURE\nPC1 eigenvalue\nquantile`", 
-                         eigv.perc = eigv.perc, fname = "fig2-pca-pt_epipc1.pdf")
+                         eigv.perc = eigv.perc, 
+                         fname = "fig2c_pca-pt-epipc1.pdf")
 
 #---------------------------
 # platform pc1 scatter plots
 #---------------------------
 lpt.platform <- get_ptplots(dfp, "Platform",eigv.perc = eigv.perc, 
-                            fname = "fig2-pca-pt_platform.pdf")
+                            fname = "fig2b_pca-pt-platform.pdf")
 
 #-----------------------------------
 # cd4t quantile pc1vs2 scatter plots
 #-----------------------------------
 dfp$`CD4+ T-cell\nquantile` <- dfp$`CD4+ T-cell quantile`
 lpt.cd4t <- get_ptplots(dfp, "`CD4+ T-cell\nquantile`", eigv.perc = eigv.perc, 
-                        fname = "fig2-pca-pt_cd4t.pdf")
+                        fname = "fig2e_pca-pt-cd4t.pdf")
 
 #-----------------------------------
 # cd8t quantile pc1vs2 scatter plots
 #-----------------------------------
 dfp$`CD8+ T-cell\nquantile` <- dfp$`CD8+ T-cell quantile`
 lpt.cd4t <- get_ptplots(dfp, "`CD8+ T-cell\nquantile`", eigv.perc = eigv.perc, 
-                        fname = "fig2-pca-pt_cd8t.pdf")
+                        fname = "fig2d_pca-pt-cd8t.pdf")
 
 #------------------------------------
 # bcell quantile pc1vs2 scatter plots
 #------------------------------------
 dfp$`B-cell\nquantile` <- dfp$`B-cell quantile`
 lpt.bcell <- get_ptplots(dfp, "`B-cell\nquantile`", eigv.perc = eigv.perc, 
-                         fname = "fig2-pca-pt_bcell.pdf")
+                         fname = "fig2f_pca-pt-bcell.pdf")
 

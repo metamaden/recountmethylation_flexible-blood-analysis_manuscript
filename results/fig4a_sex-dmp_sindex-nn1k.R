@@ -53,6 +53,10 @@ dfp <- do.call(rbind, lapply(unique(md$group), function(groupi){
   num.groupi <- apply(mpos, 1, function(ri){length(ri[ri==groupi])})
   data.frame(subgroup = rep(groupi, length(num.groupi)),
              num.subgroup = num.groupi, stringsAsFactors = F)}))
+# format dfp vars
+dfp$subgroup <- factor(dfp$subgroup, 
+                       levels = c("whole_blood", "other/NOS", "PBMC"))
+
 
 # get new plot object
 ggrain <- ggplot(dfp, aes(x = subgroup, y = num.subgroup, 
@@ -69,7 +73,7 @@ ggrain <- ggplot(dfp, aes(x = subgroup, y = num.subgroup,
   theme(axis.title.y = element_blank())
 
 # save new pdf
-pdf.fname <- "fig3_sex-dmp_nn1k-raincloud.pdf"
+pdf.fname <- "fig4a_sex-dmp_nn1k-raincloud.pdf"
 pdf(pdf.fname, 4.2, 2.8)
 print(ggrain)
 dev.off()

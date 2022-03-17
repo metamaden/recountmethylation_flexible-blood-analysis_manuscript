@@ -30,11 +30,17 @@ lup[["Grant_et_al_2021"]] <- grant.dmp$X
 #--------------
 # save new plot
 #--------------
+# get plot vars
+pdf.fname <- "fig4d_upset-sexdmp-4sets.pdf"
+xlab.str <- "Total DMPs"
 ylab.str <- paste0(paste0(rep('\n', 10),collapse = ""),
-                   "Intersection size", collapse = "")
-pdf("fig3_upset.pdf", 6, 3.8)
+                   "Overlapping DMPs", collapse = "")
+
+# save new pdf
+pdf(pdf.fname, 5.8, 3.3)
 print(upset(fromList(lup), order.by = "freq", 
             text.scale = 1.4,set_size.angles = 45,
             set_size.numbers_size = 1,
-            mainbar.y.label = ylab.str))
+            mainbar.y.label = ylab.str,
+            sets.x.label = xlab.str))
 dev.off()

@@ -122,7 +122,7 @@ dfp.mad$diff.lab <- factor(dfp.mad$diff.lab, levels = labv)
 ylab.str <- paste0(paste0(rep("\n", 3), collapse = ""), 
                    "Model type", collapse = "")
 ggtile <- ggplot(dfp.fev, aes(x = var, y = model)) + 
-  geom_tile(aes(fill = `Median\nFEV`)) + 
+  geom_tile(aes(fill = `Median\nFEV`), color = "white") + 
   theme_bw() + geom_text(aes(label = value.label), 
                          color = "white", size = 3) + 
   xlab("Variable") + ylab(ylab.str) +
@@ -131,7 +131,7 @@ ggtile <- ggplot(dfp.fev, aes(x = var, y = model)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
 
 # save new plot
-pdf.fname <- "fig2b_heatmap-fev-all_2platforms.pdf"
+pdf.fname <- "fig3a_hmtile-fev_gse-bias.pdf"
 pdf(pdf.fname, 7.5, 2.5); print(ggtile); dev.off()
 
 #-----------------------------------
@@ -148,7 +148,7 @@ ggtile <- ggplot(dfp.mad, aes(x = var, y = diff.lab)) +
   geom_text(aes(label = labels), color = "white", size = 3)
 
 # save plot
-plot.fname <- "fig2c_ggtile_mads-labeled_gse-bias.pdf"
+plot.fname <- "fig3b_hmtile-mads_gse-bias.pdf"
 pdf(plot.fname, 7.5, 2.5); print(ggtile);dev.off()
 
 #---------------------------------------------------------
