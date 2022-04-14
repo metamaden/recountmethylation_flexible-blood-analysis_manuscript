@@ -9,6 +9,7 @@
 #
 
 library(ggsci); library(patchwork); library(png)
+library(ggplot2)
 
 #----------
 # load data
@@ -40,6 +41,96 @@ dfp.cat <- do.call(rbind, lapply(seq(2), function(ii){
   dfp$color <- colv[groupi]; dfp$Subgroup <- groupi
   return(dfp)
 }))
+
+#------------------------------------------
+# summarize mean diffs, pvals by probe sets
+#------------------------------------------
+# format vars
+for(c in c(2,3,4)){
+  tdf.wb[,c] <- as.numeric(tdf.wb[,c])
+  tdf.pbmc[,c] <- as.numeric(tdf.pbmc[,c])}
+
+# replace pval = 0
+pmin.wb <- min(tdf.wb[tdf.wb$ttest.pnom>0,]$ttest.pnom)
+pmin.pbmc <- min(tdf.pbmc[tdf.pbmc$ttest.pnom>0,]$ttest.pnom)
+tdf.wb[tdf.wb$ttest.pnom==0,]$ttest.pnom <- pmin.wb
+tdf.pbmc[tdf.pbmc$ttest.pnom==0,]$ttest.pnom <- pmin.pbmc
+# order on pval
+tdf.wb <- tdf.wb[order(tdf.wb$ttest.pnom),]
+tdf.pbmc <- tdf.pbmc[order(tdf.pbmc$ttest.pnom),]
+# get adjusted pvalues
+tdf.wb$pbh <- p.adjust(tdf.wb$ttest.pnom, method = "BH")
+tdf.pbmc$pbh <- p.adjust(tdf.pbmc$ttest.pnom, method = "BH")
+# get -1 * log10 pbh
+tdf.wb$yaxis <- -1*log10(tdf.wb$pbh + min(tdf.wb$pbh))
+tdf.pbmc$yaxis <- -1*log10(tdf.pbmc$pbh)
+# get diffs
+tdf.wb$sex.diff <- tdf.wb$mean.male-tdf.wb$mean.female
+tdf.pbmc$sex.diff <- tdf.pbmc$mean.male-tdf.pbmc$mean.female
+
+# base r plots
+# volcano plots
+pdf("volcano_wb.pdf", 4, 5)
+plot(tdf.wb$sex.diff, tdf.wb$yaxis, main = "Whole blood",
+     col = rgb(0,0,0,0.4), xlab = "Mean diff. (M - F)",
+     ylab = "-1*log10(P-adj.)")
+points(tdf.wb[seq(1000),]$sex.diff, tdf.wb[seq(1000),]$yaxis, 
+       pch = 16, col = rgb(1, 0, 0, 1))
+abline(v = 0, col = "blue")
+dev.off()
+pdf("volcano_pbmc.pdf", 4, 5)
+plot(tdf.pbmc$sex.diff, tdf.pbmc$yaxis, main = "PBMC",
+     col = rgb(0,0,0,0.4), xlab = "Mean diff. (M - F)",
+     ylab = "-1*log10(P-adj.)")
+points(tdf.pbmc[seq(1000),]$sex.diff, tdf.pbmc[seq(1000),]$yaxis, 
+       pch = 16, col = rgb(1, 0, 0, 1))
+abline(v = 0, col = "blue")
+dev.off()
+
+# scatterplots -- means, male vs. female
+pdf("scatter-diff_wb.pdf", 5, 5)
+plot(tdf.wb$mean.male, tdf.wb$mean.female, main = "Whole blood")
+points(tdf.wb[seq(1000),]$mean.male, 
+       tdf.wb[seq(1000),]$mean.female, 
+       col = "red", pch = 16)
+abline(a = 0, b = 1, col = "blue")
+dev.off()
+pdf("scatter-diff_pbmc.pdf", 5, 5)
+plot(tdf.pbmc$mean.male, tdf.pbmc$mean.female, main = "PBMC")
+points(tdf.pbmc[seq(1000),]$mean.male, 
+       tdf.pbmc[seq(1000),]$mean.female, 
+       col = "red", pch = 16)
+abline(a = 0, b = 1, col = "blue")
+dev.off()
+
+# abs diff cutoff -- wb
+dfp <- tdf.wb
+dfp$cat <- "all"
+dfp.top <- tdf.wb[seq(1000),]
+dfp.top$cat <- "top_1k"
+dfp <- rbind(dfp, dfp.top)
+pdf("violin-absdiff_wb.pdf", width = 2, height = 2)
+ggplot(dfp, aes(x = cat, y = abs.diff)) + ggtitle("Whole blood") + theme_bw() + 
+  geom_violin(draw_quantiles = 0.5) + ylab("Mean Abs. diff.") +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1, 
+                                   vjust = 1))
+dev.off()
+
+# abs diff cutoff -- pbmc
+dfp <- tdf.pbmc
+dfp$cat <- "all"
+dfp.top <- tdf.pbmc[seq(1000),]
+dfp.top$cat <- "top_1k"
+dfp <- rbind(dfp, dfp.top)
+pdf("violin-absdiff_pbmc.pdf", width = 2, height = 2)
+ggplot(dfp, aes(x = cat, y = abs.diff)) + ggtitle("PBMC") + theme_bw() + 
+  geom_violin(draw_quantiles = 0.5) + ylab("Mean Abs. diff.") +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1, 
+                                   vjust = 1))
+dev.off()
+
 
 #-----------------
 # get plot objects
