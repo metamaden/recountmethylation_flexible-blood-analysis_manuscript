@@ -23,7 +23,27 @@ rg <- loadHDF5SummarizedExperiment(fpath)
 # deconvolution, with cord blood reference
 #-----------------------------------------
 ref <- "CordBlood"
-est <- estimateCellCounts2(rg[,c(1:10)], compositeCellType = ref)
+celltypev <- c("Bcell", "CD4T", "CD8T", "Gran", "Mono", "NK", "nRBC", "WholeBlood")
+est <- estimateCellCounts2(rg[,c(1:10)], 
+                           compositeCellType = ref,
+                           cellTypes = celltypev)
+
+rgf <- rg[,c(1:10)]
+rgf.matrix <- minfi::RGChannelSet(Green = as.matrix(minfi::getGreen(rgf)),
+                                  Red = as.matrix(minfi::getRed(rgf)),
+                                  annotation=BiocGenerics::annotation(rgf))
+
+# est <- estimateCellCounts2(rgf.matrix, compositeCellType = ref, cellTypes = celltypev)
+# returns:
+# > Error in p[trainingProbes, ] : subscript out of bounds
+
+refplat <- "IlluminaHumanMethylation450k"
+est <- estimateCellCounts2(rgf.matrix, compositeCellType = ref, cellTypes = celltypev,
+                           referencePlatform = refplat)
+
+est <- minfi::estimateCellCounts(rgf.matrix, compositeCellType = ref)
+
+
 
 
 
