@@ -1,0 +1,108 @@
+---
+title: "Querying and subsetting CpG probes from genome annotations"
+author: "Sean Maden"
+date: "2022-12-15"
+output: html_document
+---
+
+This vignette provides several practical examples demonstrating how to subset the
+CpG probes for the HM450K and EPIC array platforms using annotations in Illumina's
+probe manifest documentation.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+libv <- c("minfi", "minfiData")
+sapply(libv, library, character.only = T)
+rg <- get(data("RGsetEx"))
+```
+
+# Probe manifest background
+
+The CpG probe manifest files were provided by Illumina and contain a number of
+useful fields pretaining to the genome location of a CpG probe. When we read 
+DNAm IDAT files into a `SummarizedExperiment` object, they are automatically
+combined with a manifest containing rich probe-level details about the probe
+chemistry, the genome location, and various functional features and annotations
+to be aware of. 
+
+We can extract, inspect, and save the probe manifest with `getAnnotation()` as
+follows:
+
+```{r}
+man <- as.data.frame(getAnnotation(rg))
+colnames(man)
+```
+
+These manifest are made available in the Bioconductor packages
+`IlluminaHumanMethylation450kmanifest` and `IlluminaHumanMethylationEPICmanifest`, 
+so be sure to have these installed before working with DNAm arrays as 
+`SummarizedExperiment` objects. These manifests are unchanged from the original 
+manifest files, which can be accessed from Illumina's website. The HM450K manifest 
+can be found [here](https://support.illumina.com/array/array_kits/infinium_humanmethylation450_beadchip_kit/downloads.html), and the EPIC manifest can be found [here](https://support.illumina.com/array/array_kits/infinium-methylationepic-beadchip-kit/downloads.html). 
+The official documents also include detailed descriptions of the manifest columns.
+
+# Filtering on common SNPs
+
+It is common to filter CpG probes which are likely to be impacted by underlying
+population genetic variation of various kinds. Details about this can be found
+elsewhere. The probe manifest details whether a CpG probe overlaps or occurs 
+close to a common SNP. The distance from the nearest common SNP is also provided. 
+This information can also be obtained using the `getSnpInfo()` function from 
+`minfi`.
+
+```{r}
+getSnpInfo(rg)
+```
+
+It is recommended that CpG probes which contain a SNP be filtered prior to analysis.
+This is accomplished using `dropLociWithSnps()` to filter a `MethylSet` or `RatioSet` 
+that has been mapped to the genome.
+
+```{r}
+gm <- preprocessRaw(rg) # make MethylSet
+gms <- mapToGenome(gm) # make GenomicMethylSet
+gmsf <- dropLociWithSnps(gms) # filter probes with SNPs
+```
+
+# Filtering on cross-reactive CpG probes
+
+It was found previously that a number of probes on both the EPIC and HM450K platforms
+have cross-reactivity, an undesirable quality that limits probe measurement 
+reliability. We can identify and remove probes with evidence of cross-reactivity
+from either platform by simply filtering on the identifiers of the probes to be
+removed. Three sources for cross-reactive probe lists can be accessed 
+[here](https://github.com/metamaden/methyPre/tree/master/data). These are:
+
+* 1. Illumina's cross-reactive HM450K probes ([source](https://support.illumina.com/array/array_kits/infinium_humanmethylation450_beadchip_kit/downloads.html)).
+* 2. Chen et al 2013 cross-reactive HM450K probes ([source](https://www.tandfonline.com/doi/full/10.4161/epi.23470)).
+* 3. Pidsley et al 2016 cross-reactive EPIC probes ([source](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-016-1066-1)).
+
+# Annotating functional regions
+
+One of the most common ways to annotate CpG probes is according to their position
+relative to protein-coding gene regions as well as relative to cytosine- and guanine-dense
+regions called CpG Islands. Fortunately, we can quickly generate both annotations
+from the manifest. 
+
+If we wish to unambiguously call whether a probe maps to a gene's promoter, one
+approach could be to condition on overlap in either the 5' UTR or the 1st Exon, 
+both regions which are regarded as important for initial transcription factor
+binding and transcription initiation. We can then consider all other gene-mapping
+probes except 3' UTR as "gene body"-mapping, and all remaining probes as 
+"intergenic".
+
+# Getting probe subsets
+
+## Getting probe sets from functional annotations
+
+## Getting probes for a certain gene
+
+We can use regular expressions to filter probes based on which genes they map to.
+We can use either the serial encoding or the natural text gene names to do this.
+
+For instance, if we wish to identify CpG probes mapping to the gene 
+[Tumor Protein 53 (TP53)](https://www.genecards.org/cgi-bin/carddisp.pl?gene=TP53), 
+we could use the following:
+
+```{r}
+```

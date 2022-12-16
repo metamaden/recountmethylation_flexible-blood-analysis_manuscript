@@ -1,0 +1,162 @@
+---
+title: "Exporting and saving datasets"
+author: "Sean Maden"
+date: "2022-12-14"
+output: html_document
+---
+
+This vignette provides instructions on how to load, convert, and save DNA 
+methylation (DNAm) array datasets, including how to make `SummarizedExperiment` 
+objects which can be used with function from DNAm analysis packages like `minfi` 
+and `wateRmelon`. More in-depth discussion of DNAm data types and storage formats
+can be found in the [`recountmethylation` User's Guide]().
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+libv <- c("minfiData", "HDF5Array", "minfi")
+sapply(libv, library, character.only = T)
+```
+
+# Obtaining example data
+
+For demonstration and development purposes, we can load the example `RGChannelSet` 
+data provided in the `minfiData` package. This load example data generated for 
+the HM450k array platform.
+
+```{r}
+rg.hm450k <- get(data("RGsetEx"))
+```
+
+See the `minfiDataEPIC` package for similar small example datasets generated 
+from the EPIC array platform.
+
+# Converting data
+
+## Converting data between platforms
+
+We can convert between HM450K and EPIC array platforms using `convertArray()` function
+in the `minfi` package.
+
+```{r}
+rg.epic <- convertArray(rg.hm450k, "IlluminaHumanMethylationEPIC")
+```
+
+This makes a new digital array object that mimics data
+generated from the EPIC array, which can be convenient for harmonizing samples
+across platforms or passing data to functions written for a particular platform.
+
+## Converting data between `SummarizedExperiment` classes
+
+To convert between and `RGChannelSet` and other classes, we need to call the 
+functions `preprocessRaw()` (or some other preprocessing function which returns
+a `MethylSet`), and `mapToGenome()`, which will map a `SummarizedExperiment` 
+object to the genome coordinates. The latter is useful for genome or annotation-based queries and it may be required by certain normalization and analysis functions.
+
+```{r}
+ms.hm450k <- preprocessRaw(rg) # make MethylSet
+ms.hm450k <- mapToGenome(ms.hm450k) # make GenomicMethylSet 
+```
+
+We can also make new `SummarizedExperiment` objects manually by specifying the
+different fields for assays, metadata, experiment details, etc. For instance, we
+can make a non-normalized `GenomicRatioSet` from the object `ms.gr.hm450k` as 
+follows:
+
+```{r}
+gr.hm450k <- GenomicMethylSet(gr = granges(ms.hm450k),
+                              Meth = getMeth(ms.hm450k),
+                              Unmeth = getUnmeth(ms.hm450k),
+                              annotation = annotation(ms.hm450k))
+```
+
+For details about similar constructor functions for different `SummarizedExperiment`
+classes, you can consult the function documentation using `?RGChannelSet`,
+`?MethylSet`, `?GenomicMethylSet`, `?RatioSet`, and `?GenomicRatioSet`.
+
+## Converting between standard and `DelayedArray`-backed objects
+
+We can convert a standard matrix-backed `SummarizedExperiment` object, such as 
+shown above, into a `DelayedArray`-backed object by first saving with `saveHDF5SummarizedExperiment()`. This will recast and store the new object in
+a new directory.
+
+```{r}
+saveHDF5SummarizedExperiment(gr.hm450k, dir = "gr_h5se_new")
+```
+
+We load the new `DelayedArray`-backed data with `loadHDF5SummarizedExperiment()`,
+and this should realize a subset of the data in memory.
+
+```{r}
+gr.h5se <- loadHDF5SummarizedExperiment(dir = "gr_h5se_new")
+```
+
+Now the table returned from running `getBeta(gr.h5se)` or `getM(gr.h5se)` inherits 
+from classes `DelayedArray` and `DelayedMatrix`.
+
+## Choosing the correct data type to use
+
+The compiled DNAm array data in `recountmethylation` covers 3 principal `SummarizedExperiment` formats (`rg`, `gm`, and `gr`) and 2 storage formats (HDF5 
+and `DelayedArray`). In general, R users will want to use the `DelayedArray`-backed
+object formats, while users of Python and other programming languages will prefer 
+to use HDF5 database files. These preferences can be summarized in the following
+decision tree diagram:
+
+![](https://github.com/metamaden/recountmethylation_bioc2021/blob/main/images/data-decision-tree.png?raw=true)
+
+# Saving data
+
+## Saving flat tables from DNAm array datasets
+
+We can extract flat tables of the assays or sample metadata from either matrix-backed
+or `DelayedArray`-backed `SummarizedExperiment` objects. The specific functions 
+will depend on the specific data format, but in general you can think of the 
+assays data such as the Red channel signal or Beta-values matrix as the main
+dataset of CpG probes (rows) and samples (columns), where `rowData` contains 
+the probe metadata such as the manifest, genome coordinates, and related metadata,
+and the `colData` can contain the sample-level metadata such as demographic information, tissue type, disease condition, and more.
+
+We can extract the individual flat files and save these as R binary files as follows:
+
+```{r}
+m.beta <- getBeta(gr.h5se)
+save(m.beta, file = "mbeta_new.rda")
+```
+
+To instead write flat files to new tables such as `.csv` files, we can use:
+
+```{r}
+write.csv(m.beta, file = "mbeta_new.csv")
+```
+
+Note it will generally take longer to write to a new table than to a binary file,
+and the time difference will increase with the size of the dataset being saved.
+
+## Saving `SummarizedExperiment` objects
+
+Standard matrix-backed `SummarizedExperiment` objects, such as `RGChannelSets`, `MethylSets`, and `GenomicRatioSets`, can all be saved like standard R objects.
+
+```{r}
+save(rg, file = "rg_new.rda")
+save(gm, file = "gm_new.rda")
+save(gr, file = "gr_new.rda")
+```
+
+## Saving `DelayedArray`-backed objects
+
+When working with full-sized compilation files, repeatedly saving the `DelayedArray`-backed datasets is very time intensive. In these cases when the
+dataset directory already exists and you simply want to update it, say to subset
+the assays or sample metadata, then it is much faster to use the function `quickResaveHDF5SummarizedExperiment()`:
+
+```{r}
+rg.h5se <- rg.h5se[seq(1000),]
+quickResaveHDF5SummarizedExperiment(rg.h5se)
+```
+
+As shown above,  you will need to use the slower save function `saveHDF5SummarizedExperiment()` saving a new `DelayedArray`-backed object.
+
+# Conclusions
+
+We have seen how to load, convert, and save DNAm array datasets using runnable 
+examples and a minimal example dataset. For more in-depth discussion of data
+types and storage formats, see the [`recountmethylation` User's Guide](). You may
+also find the [Bioc 2021 lecture]() materials helpful
