@@ -18,9 +18,9 @@ gr <- loadHDF5SummarizedExperiment(gr.fpath)
 # get pheno data
 pd <- pData(gr)
 
-#----------------------
-# granulocytes by study
-#----------------------
+#---------------------------------
+# filter samples, format variables
+#---------------------------------
 # get plot data
 pdf <- as.data.frame(pd[pd$blood.subgroup=="PBMC",])
 gse.filt <- as.data.frame(table(pdf$gse))
@@ -31,6 +31,10 @@ pdf$gran.num <- as.numeric(pdf$predcell.Gran)
 lvl <- unlist(lapply(gse.filt[,1], function(gsei){median(pdf[pdf$gse==gsei,]$gran.num)}))
 names(lvl) <- gse.filt[,1]
 pdf$gse.fact <- factor(pdf$gse, levels = names(lvl[order(lvl)]))
+
+#----------------------
+# granulocytes by study
+#----------------------
 # make summary df
 pdf.summary <- aggregate(gran.num ~ gse.fact, data = pdf, median)
 
@@ -65,3 +69,24 @@ ggecdf <- ggplot(pdf, aes(gran.num)) +
   
 ggecdf + facet_grid(~gse.fact, scales = "free")
 
+#---------------------------------
+# compare qc metrics by gran group
+#---------------------------------
+# correlation tests
+cnv.qc <- colnames(pdf)[c(18:34, 52, 53)]
+df.corr <- as.data.frame(do.call(rbind, lapply(cnv.qc, function(cni){
+  cti <- cor.test(pdf[,cni], pdf[,"gran.num"], method = "spearman")
+  c(cti$estimate, cti$p.value)
+})))
+colnames(df.corr) <- c("corr.spear.rho", "corr.spear.punadj")
+df.corr$p.adj.bh <- p.adjust(df.corr[,2], method = "BH")
+df.corr$qc.metric <- cnv.qc
+df.corr <- df.corr[,c(4,1:3)]
+df.corr <- df.corr[order(df.corr$p.adj.bh),]
+
+# get rounded table
+df.corr[,2] <- round(as.numeric(df.corr[,2]), digits = 3)
+for(c in c(3:4)){df.corr[,c] <- format(as.numeric(df.corr[,c]), digits = 3)}
+# save new table
+csv.fname <- "stable_corr_pbmc-gran-qcmetric.csv"
+write.csv(df.corr, file = csv.fname, row.names = F)

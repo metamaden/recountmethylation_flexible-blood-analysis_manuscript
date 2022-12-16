@@ -1,0 +1,5 @@
+,Technical,,Biological,,,,,,Demographic,,,
+Model,Study ID,Platform,CD8+ T-cells,CD4+ T-cells,B-cells,Gran.,Mono.,Natural Killer,Sex,Age,G.A. PC1,G.A. PC2
+Unadjusted,0.465,0.037,0.014,0.01,0.013,0.02,0.005,0.009,0.003,0.012,0.077,0.054
+Adjustment 1,0.002,0.086,0.036,0.026,0.035,0.05,0.013,0.024,0.008,0.03,0.212,0.144
+Adjustment 2,0,0.089,0.037,0.026,0.035,0.051,0.013,0.024,0.008,0.031,0.214,0.144
