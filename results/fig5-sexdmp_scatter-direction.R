@@ -19,14 +19,17 @@ dmp.fpath <- "st_sex-dmp_all-dmp-info.rda"
 new.dmp <- get(load(file.path(dmp.fpath)))
 
 # get plot palette
-pal <- c("Other/NOS" = "#3B3B3BFF", "Whole blood" = "#868686FF", 
-         "Cord blood" = "#EFC000FF", "PBMC" = "#CD534CFF")
+pal <- c("Other/NOS" = "#3B3B3BFF", 
+         "Whole blood" = "#868686FF", 
+         "Cord blood" = "#EFC000FF", 
+         "PBMC" = "#CD534CFF")
 
 #------------------
 # plot whole blood
 #------------------
-# make scatter plot
+# get plot vars
 col.wb <- "#868686FF"
+pt.alpha <- 0.5
 filt.wb <- new.dmp$is.whole.blood.dmp == T & new.dmp$is.inoshita.2015.dmp == T
 df.wb <- new.dmp[filt.wb,]
 
@@ -86,7 +89,7 @@ plot.composite <- pt.wb + inset_element(plot.inset,
                                         top = 0.46)
 
 # save new pdf
-pdf.fname <- "fig3_sex-dmp_wb-dnam-diff-with-inset.pdf"
+pdf.fname <- "fig4e_sex-dmp_wb-dnam-diff-with-inset.pdf"
 pdf(pdf.fname, 2.25, 2.05)
 print(plot.composite)
 dev.off()
@@ -94,7 +97,9 @@ dev.off()
 #----------
 # plot pbmc
 #----------
+# get plot vars
 col.pbmc <- "#CD534CFF"
+pt.alpha <- 0.5
 filt.pbmc <- new.dmp$is.pbmc.dmp == T &
   new.dmp$is.inoshita.2015.dmp == T
 df.pbmc <- new.dmp[filt.pbmc,]
@@ -158,7 +163,7 @@ plot.composite <- pt.pbmc + inset_element(plot.inset,
                                           top = 0.46)
 
 # save new pdf
-pdf.fname <- "fig3_sex-dmp_pbmc-dnam-diff-with-inset.pdf"
+pdf.fname <- "fig4f_sex-dmp_pbmc-dnam-diff-with-inset.pdf"
 pdf(pdf.fname, 2.25, 2.05)
 print(plot.composite)
 dev.off()

@@ -87,6 +87,24 @@ points(tdf.pbmc[seq(1000),]$sex.diff, tdf.pbmc[seq(1000),]$yaxis,
 abline(v = 0, col = "blue")
 dev.off()
 
+# low-res volcano plots
+jpeg("volcano_wb.jpg", width = 4, height = 5, units = "in", res = 300)
+plot(tdf.wb$sex.diff, tdf.wb$yaxis, main = "Whole blood",
+     col = rgb(0,0,0,0.4), xlab = "Mean diff. (M - F)",
+     ylab = "-1*log10(P-adj.)")
+points(tdf.wb[seq(1000),]$sex.diff, tdf.wb[seq(1000),]$yaxis, 
+       pch = 16, col = rgb(1, 0, 0, 1))
+abline(v = 0, col = "blue")
+dev.off()
+pdf("volcano_pbmc.jpg", width = 4, height = 5, units = "in", res = 300)
+plot(tdf.pbmc$sex.diff, tdf.pbmc$yaxis, main = "PBMC",
+     col = rgb(0,0,0,0.4), xlab = "Mean diff. (M - F)",
+     ylab = "-1*log10(P-adj.)")
+points(tdf.pbmc[seq(1000),]$sex.diff, tdf.pbmc[seq(1000),]$yaxis, 
+       pch = 16, col = rgb(1, 0, 0, 1))
+abline(v = 0, col = "blue")
+dev.off()
+
 # scatterplots -- means, male vs. female
 pdf("scatter-diff_wb.pdf", 5, 5)
 plot(tdf.wb$mean.male, tdf.wb$mean.female, main = "Whole blood")
@@ -185,7 +203,7 @@ plot.inset <- ggplot(dfp.cat, aes(x = num.dmp, y = num.validated,
 
 # final composite plot object
 plot.composite <- plot.main + 
-  inset_element(plot.inset, left = 0.36, 
+  inset_element(plot.inset, left = 0.45, 
                 bottom = 0.009, right = 0.98, 
                 top = 0.68)
 
@@ -194,6 +212,6 @@ plot.composite <- plot.main +
 #-------------------- 
 # plot concodrance at the top data
 pdf.fname <- "fig4_sex-dmp_conc-at-top-comp.pdf"
-pdf(pdf.fname, 7.5, 4.5)
+pdf(pdf.fname, width = 7.6, height = 4.3)
 print(plot.composite)
 dev.off()

@@ -6,9 +6,8 @@
 # algorithm predicts population structure from HM450K DNAm (Rahmani et al 2017).
 # This scripts writes DNAm/Beta-values for the the genotype-explanatory probes 
 # provided in the manuscript supplement.
-
-
-# prep bval table for glint
+#
+#
 
 library(HDF5Array)
 library(minfi)

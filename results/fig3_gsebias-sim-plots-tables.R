@@ -6,7 +6,8 @@
 
 library(ggplot2); library(data.table)
 library(scales); library(gridExtra)
-library(ggridges)
+library(ggpubr)
+# library(magick)
 
 #----------
 # load data
@@ -18,64 +19,6 @@ msq <- get(load(msq.fname))
 # fev differences table
 mdif.fname <- "mdiff-gse-bias_all-blood-2-platforms.rda"
 mdif <- get(load(mdif.fname))
-
-#-----------------
-# helper functions
-#-----------------
-get_medians <- function(mdat, groupv){
-  mmed <- do.call(rbind, lapply(groupv, function(typei){
-    # get all merged medians
-    col.str <- paste0(c(typei, "group"), collapse = "|")
-    mff <- mdat[,c(grepl(col.str, colnames(mdat)))]
-    statv <- apply(mff[,1:10], 2, median, na.rm = T)
-    statv.format <- format(statv, scientific = T, digits = 3)
-    med.merge <- c(statv.format, "merged_groups")
-    # medians by sample group
-    med.groups <- do.call(rbind, lapply(unique(mff$group), function(groupi){
-      statv <- apply(mff[mff$group == groupi,1:10], 2, median, na.rm = T)
-      statv.format <- format(statv, scientific = T, digits = 3)
-      c(statv.format, groupi)}))
-    med.all <- rbind(med.merge, med.groups)
-    groupv <- med.all[,11]; med.all <- med.all[,c(1:10)]
-    variablev <- gsub("_.*", "", colnames(med.all))
-    typev <- gsub(".*_", "", colnames(med.all))
-    med.all.format <- as.data.frame(t(med.all[,c(1:10)]), 
-                                    stringsAsFactors = F)
-    colnames(med.all.format) <- groupv
-    med.all.format$variable <- varv
-    med.all.format$model.type <- typev
-    return(med.all.format)
-  })); return(mmed)
-}
-
-get_variances <- function(mdat, groupv){
-  mvar <- do.call(rbind, lapply(groupv, function(typei){
-    # get all merged medians
-    col.str <- paste0(c(typei, "group"), collapse = "|")
-    mff <- mdat[,c(grepl(col.str, colnames(mdat)))]
-    statv <- apply(mff[,1:10], 2, var, na.rm = T)
-    statv.format <- format(statv, scientific = T, digits = 3)
-    var.merge <- c(statv.format, "merged_groups")
-    # medians by sample group
-    var.groups <- do.call(rbind, lapply(unique(mff$group), function(groupi){
-      statv <- apply(mff[mff$group == groupi,1:10], 2, var, na.rm = T)
-      statv.format <- format(statv, scientific = T, digits = 3)
-      c(statv.format, groupi)}))
-    var.all <- rbind(var.merge, var.groups)
-    groupv <- var.all[,11]; var.all <- var.all[,c(1:10)]
-    variablev <- gsub("_.*", "", colnames(var.all))
-    typev <- gsub(".*_", "", colnames(var.all))
-    var.all.format <- as.data.frame(t(var.all[,c(1:10)]), stringsAsFactors = F)
-    colnames(var.all.format) <- groupv; var.all.format$variable <- varv
-    var.all.format$model.type <- typev; return(var.all.format)
-  })); return(mvar)
-}
-
-get_mstat <- function(mdat, groupv){
-  mmed <- get_medians(mdat, groupv); mvar <- get_variances(mdat, groupv)
-  mmed$stat <- "median"; mvar$stat <- "variance"; mstat <- rbind(mmed, mvar)
-  return(mstat)
-}
 
 #---------------------------------------
 # fraction explained variances plot data
@@ -96,24 +39,22 @@ dfp.fev$model <- factor(dfp.fev$model,
                         levels = c("unadj", "adj1", "adj2"))
 dfp.fev$value.label <- round(100*dfp.fev$value, digits = 2)
 
-#--------------------------------------
-# get plot dfp data for fev plots, fast
-#--------------------------------------
+#-----------------------------------------------
+# main fig -- compare var cat dist, violin plots
+#-----------------------------------------------
+# get plot data
 # get fev binned on type
 typev <- c("unadj", "adj1", "adj2")
-lvarv <- list(technical = c("platform"),
+lvarv <- list(technical = c("platform", "gse"),
               demographic = c("predage", "predsex", "glint.epi.pc2", 
                               "glint.epi.pc1"),
               biological = c("predcell.CD8T", "predcell.CD4T", "predcell.NK", 
                              "predcell.Bcell", "predcell.Mono", "predcell.Gran"))
 
 msqf <- msq[,!grepl("^Residuals.*", colnames(msq))]
-ltot.fev <- lapply(typev, function(ti){
-  apply(msqf[,grepl(ti, colnames(msqf))], 1, sum, na.rm = T)
-})
+ltot.fev <- lapply(typev, function(ti){apply(msqf[,grepl(ti, colnames(msqf))], 1, sum, na.rm = T)})
 names(ltot.fev) <- typev
-
-# get plot data
+# get plot data object
 dfp <- do.call(rbind, lapply(names(lvarv), function(vari){
   varvii <- lvarv[[vari]]
   do.call(rbind, lapply(names(ltot.fev), function(ti){
@@ -131,57 +72,106 @@ dfp <- do.call(rbind, lapply(names(lvarv), function(vari){
   }))
 }))
 
-#--------------------
-# make fev dist plots
-#--------------------
-# load data
-#dfp.fname <- "dfp_fev-bycat_gse-bias_blood-4stypes.csv"
-#dfp <- data.table::fread(dfp.fname, sep = ",", header = T, data.table = F)
-
-# format vars
-dfp$`Model type` <- ifelse(dfp$modeltype == "unadj", "unadjusted",
-                           ifelse(dfp$modeltype == "adj1", "adjustment 1", "adjustment 2"))
+# get plot objects
+dfp$`Model type` <- ifelse(dfp$modeltype=="unadj", "unadjusted",
+                           ifelse(dfp$modeltype=="adj1", "adjustment 1", "adjustment 2"))
+lvlv <- c("unadjusted", "adjustment 1", "adjustment 2")
+dfp$`Model type` <- factor(dfp$`Model type`, levels = lvlv)
 dfp$FEV <- dfp$fev.fract
-
-# get violin plot objects
-ggviolin <- ggplot(dfp, aes(y = FEV, x = `Model type`, fill = `Model type`)) + 
+# format plot vars
+catv <- c("technical", "demographic", "biological")
+tech.str <- paste0(paste0(rep(" ", 13), collapse = ""), "Technical", collapse = "")
+biol.str <- paste0(paste0(rep(" ", 5), collapse = ""), "Biological", collapse = "")
+demo.str <- paste0(paste0(rep(" ", 2), collapse = ""), "Demographic", collapse = "")
+# get list of plot objects
+text.size <- 10; title.size <- 12
+lgg <- lapply(catv, function(cati){
+  dfpi <- dfp[dfp$vartype == cati,]
+  ggvp <- ggplot(dfpi, aes(y = FEV, x = `Model type`, fill = `Model type`)) + 
+    geom_violin(draw_quantiles = 0.5) + theme_bw() +
+    theme(axis.text.x = element_blank(), axis.title.x = element_blank(),
+          legend.position = "none", plot.title = element_text(size = title.size),
+          axis.text.y = element_text(size = text.size))
+  if(cati == "biological"){
+    ggvp <- ggvp + ggtitle(biol.str) + 
+      theme(axis.title.y = element_text(size = title.size))
+  }
+  if(cati == "demographic"){
+    ggvp <- ggvp + ggtitle(demo.str) +
+      theme(axis.title.y = element_blank())
+  }
+  if(cati == "technical"){
+    ggvp <- ggvp + ggtitle(tech.str) +
+      theme(axis.title.y = element_blank())
+  }
+  return(ggvp)
+})
+names(lgg) <- catv
+# get zoom panel for technical
+# get plot legend
+pl <- ggplot(dfp, aes(y = FEV, x = `Model type`, fill = `Model type`)) + 
   geom_violin(draw_quantiles = 0.5) + theme_bw() +
-  theme(axis.text.x = element_blank(), axis.title.x = element_blank())
-ggviolin <- ggviolin + facet_wrap(~vartype, ncol = 4)
+  theme(legend.title = element_text(size = title.size),
+        legend.text = element_text(size = text.size))
+lgg[["legend"]] <- get_legend(pl)
 
 # save new plot
-plot.fname <- "ggviolin_fev-byvarcat_gsebias.pdf"
-pdf(paste0(plot.fname, ".pdf"), 5.6, 1.6)
-print(ggviolin); dev.off()
-
-# get summary stats
-grpv <- c("unadj", "adj1", "adj2")
-filtv <- c("all", "biological", "demographic", "technical")
-# all vars
-dfpi <- dfp
-for(filti in filtv){
-  dfpi <- dfp[dfp$vartype==filti,]
-  for(grpi in grpv){
-    dfpii <- dfpi[dfpi$modeltype == grpi,]
-    message(filti, ", ", grpi, ": ", median(dfpii$fev, na.rm = T))
-  }
-}
-
-# biological, unadj: 0.153656211806912
-# biological, adj1: 0.365648631715492
-# biological, adj2: 0.373661371181732
-
-# demographic, unadj: 0.254445061411055
-# demographic, adj1: 0.611092139972859
-# demographic, adj2: 0.615988921116518
-
-# technical, unadj: 0.0369246897171495
-# technical, adj1: 0.0857439298076734
-# technical, adj2: 0.0885693329339579
+plot.fname <- "ggvp_fev-byvarcat_gsebias"
+mg.pgn.fname <- "magnifying_glass_bgtransparent.png"
+# get plot params
+lm <- matrix(c(1,1,2,2,3,3,4), nrow = 1)
+# save new pdf
+pdf(paste0(plot.fname, ".pdf"), 7.8, 1.8)
+grid.arrange(lgg[["biological"]], lgg[["demographic"]], lgg[["technical"]], 
+             lgg[["legend"]], layout_matrix = lm)
+dev.off()
 
 
+#--------------------
+# sfigs, compare fevs
+#--------------------
+# get plot data
+dfp1 <- data.frame(unadj = ltot.fev$unadj, adj.val = ltot.fev$adj1)
+dfp2 <- data.frame(unadj = ltot.fev$unadj, adj.val = ltot.fev$adj2)
+dfp1$adj.type <- "adj. 1"; dfp2$adj.type <- "adj. 2"
+dfp <- rbind(dfp1, dfp2)
+# fract fev
+dfp$fract.fev <- dfp$adj.val/dfp$unadj
 
+# plot scatterplot fev
+ggpt <- ggplot(dfp, aes(x = unadj, y = adj.val)) +
+  geom_point(draw_quantiles = 0.1) + theme_bw()
+ggpt <- ggpt + facet_wrap(~adj.type, ncol = 2)
+pdf("ggpt_fev-adj-unadj_gsebias.pdf", 5.5, 3.5)
+print(ggpt); dev.off()
 
+# 2d density plot
+ggpt <- ggplot(dfp, aes(x = unadj, y = adj.val)) + geom_bin2d(bins = 70) +
+  scale_fill_continuous(type = "viridis") + theme_bw() +
+  xlab("Unadjusted FEV") + ylab("Adjusted FEV") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
+ggpt <- ggpt + facet_wrap(~adj.type, ncol = 2)
+pdf("ggdensity_fev-adj-unadj_gsebias.pdf", 3.5, 1.8)
+print(ggpt); dev.off()
+
+# plot fraction fev
+# get plot object
+ggvp <- ggplot(dfp, aes(x = adj.type, y = fract.fev, group = adj.type)) +
+  geom_violin(show_quantiles = 0.5) + theme_bw() + 
+  ylab("FEV fraction\n(Adj./Unadj.)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+        axis.title.x = element_blank())
+# save new plot
+pdf('ggvp_fev-fract_gsebias.pdf', 2.5, 1.5)
+print(ggvp);dev.off()
+
+# summary stats for reporting
+median(dfp[dfp$adj.type=="adj. 1",]$fract.fev) # 0.6882031
+median(dfp[dfp$adj.type=="adj. 2",]$fract.fev) # 0.6841613
+var(dfp[dfp$adj.type=="adj. 1",]$fract.fev) # 0.07646976
+var(dfp[dfp$adj.type=="adj. 2",]$fract.fev) # 0.07648388
+sd(dfp[dfp$adj.type=="adj. 1",]$fract.fev) # 0.2765317
+sd(dfp[dfp$adj.type=="adj. 2",]$fract.fev) # 0.2765572
 
 #----------------------------
 # get data for fev dist plots
@@ -265,3 +255,76 @@ rownames(tfev.bind) <- filtv
 # bind all results
 st2 <- rbind(tfev, tfev.bind)
 t(round(st2, 3))
+
+
+#---------------------------------
+# violin plots with technical zoom -- OLD
+#---------------------------------
+source("facet_zoom2.R")
+# library(png)
+
+catv <- c("technical", "demographic", "biological")
+tech.str <- paste0(paste0(rep(" ", 13), collapse = ""),
+                   "Technical", collapse = "")
+biol.str <- paste0(paste0(rep(" ", 5), collapse = ""),
+                   "Biological", collapse = "")
+demo.str <- paste0(paste0(rep(" ", 2), collapse = ""),
+                   "Demographic", collapse = "")
+text.size <- 10
+title.size <- 12
+lgg <- lapply(catv, function(cati){
+  dfpi <- dfp[dfp$vartype == cati,]
+  ggvp <- ggplot(dfpi, aes(y = FEV, x = `Model type`, fill = `Model type`)) + 
+    geom_violin(draw_quantiles = 0.5) + theme_bw() +
+    theme(axis.text.x = element_blank(), axis.title.x = element_blank(),
+          legend.position = "none", plot.title = element_text(size = title.size),
+          axis.text.y = element_text(size = text.size))
+  if(cati == "biological"){
+    ggvp <- ggvp + ggtitle(biol.str) + 
+      theme(axis.title.y = element_text(size = title.size))
+  }
+  if(cati == "demographic"){
+    ggvp <- ggvp + ggtitle(demo.str) +
+      theme(axis.title.y = element_blank())
+  }
+  if(cati == "technical"){
+    ggvp <- ggvp + ggtitle(tech.str) +
+      theme(axis.title.y = element_blank()) +
+      facet_zoom2(ylim = c(0, 0.01))
+  }
+  return(ggvp)
+})
+names(lgg) <- catv
+# get zoom panel for technical
+# get plot legend
+pl <- ggplot(dfp, aes(y = FEV, x = `Model type`, fill = `Model type`)) + 
+  geom_violin(draw_quantiles = 0.5) + theme_bw() +
+  theme(legend.title = element_text(size = title.size),
+        legend.text = element_text(size = text.size))
+lgg[["legend"]] <- get_legend(pl)
+
+# save new plot
+plot.fname <- "ggviolin_fev-byvarcat_gsebias"
+mg.pgn.fname <- "magnifying_glass_bgtransparent.png"
+# get plot params
+lm <- matrix(c(1,1,1,1,1,1,1,1,1,
+               2,2,2,2,2,2,2,2,
+               3,3,3,3,3,3,3,3,3,3,3,3,3,
+               4,4,4,4,4,4), nrow = 1)
+# save new pdf
+pdf(paste0(plot.fname, ".pdf"), 7.8, 1.8)
+grid.arrange(lgg[["biological"]], lgg[["demographic"]],
+             lgg[["technical"]], lgg[["legend"]], 
+             layout_matrix = lm)
+dev.off()
+
+# Produce image using graphics device
+# fig <- image_graph(width = 800, height = 200, res = 110)
+# ggplot2::qplot(mpg, wt, data = mtcars, colour = cyl)
+#grid.arrange(lgg[["biological"]], lgg[["demographic"]], lgg[["technical"]], 
+#             lgg[["legend"]], layout_matrix = lm)
+#dev.off()
+#mg.image <- image_scale(image_read(mg.pgn.fname), "x22")
+#out <- image_composite(fig, mg.image, 
+#                       offset = geometry_point(475, -175))
+#print(out)

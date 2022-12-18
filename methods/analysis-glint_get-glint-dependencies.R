@@ -1,7 +1,5 @@
 library(basilisk)
 
-
-
 # define env attributes
 env.name <- "dnam_si"
 pkgv <- c("hnswlib==0.5.1", "pandas==1.2.2", "numpy==1.20.1", 
