@@ -21,7 +21,7 @@ sapply(libv, library, character.only = T)
 # Probe manifest background
 
 The CpG probe manifest files were provided by Illumina and contain a number of
-useful fields pretaining to the genome location of a CpG probe. When we read 
+useful fields pertaining to the genome location of a CpG probe. When we read 
 DNAm IDAT files into a `SummarizedExperiment` object using the `minfi` package 
 (e.g. using `read.metharray.exp()` or similar), they are automatically
 combined with an array platform manifest containing rich probe-level details 
@@ -124,8 +124,8 @@ Many DNAm studies note whether methylation occurs in a gene's promoter or body r
 One reason is that we expect the functional consequences of DNAm to vary given its
 location in a gene, or indeed if it occurs in a gene at all. Another common way to 
 annotate CpG probes is according to their position relative to protein-coding gene 
-regions as well as relative to cytosine- and guanine-dense regions called CpG Islands. 
-We can quickly group probes according to either their gene or CpG Island region using 
+regions as well as relative to cytosine- and guanine-dense regions called CG Islands. 
+We can quickly group probes according to either their gene or CG Island region using 
 information in the manifest, as shown below.
 
 ## Find probes mapping to a gene
@@ -185,7 +185,6 @@ ggplot(df, aes(x = gene.regionv, y = Freq, fill = gene.regionv)) + theme_bw() +
 
 ## Identifying promoter-mapping and gene body-mapping CpG probes
 
-
 We can use this logic of the `UCSC_RefGene_Group` variable to build conditions 
 for new functional regions of interest, namely promoter and gene body regions. 
 
@@ -230,10 +229,32 @@ ggplot(dfp, aes(x = region, y = Freq, fill = region)) + theme_bw() +
         axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
-## CpG Island annotations
+## CG Island annotations
 
-It is comparatively straightforward to view a probe's relation to a CpG Island 
-from the manifest using the variable `Relation_to_Island`.
+It is comparatively straightforward to view a probe's relation to a CG Island 
+from the manifest using the variable `Relation_to_Island`. Unlike with the 
+transcript-centric gene annotations, values in this variable occur 1:1 with probe 
+IDs, as only one category applies to any given genome coordinate location.
+
+We can see the unique categories for this variable from the manifest using:
+
+```{r}
+unique(man$Relation_to_Island)
+```
+
+Categories in `Relation_to_Island` are [defined in the official documentation](https://support.illumina.com/content/dam/illumina-support/documents/downloads/productfiles/methylationepic/infinium-methylationepic-manifest-column-headings.pdf) 
+as:
+
+* `Island` : CG Island, a region with high cytosine- and guaning content. If a 
+probe maps to a CG Island, the island name/coordinates can be found in the column `Islands_Name`.
+* `N_Shore`/`S_Shore` : The upstream (5'/North) and downstream (3'/South) shore 
+regions. These are up to 2kbp-wide regions flanking CG islands.
+* `N_Shelf`/`S_Shelf` : The upstream (5'/North) and downstream (3'/South) shelf 
+regions. These are 2-4kbp-wide regions flanking CG Islands and their shores.
+* `OpenSea` : Any regions occurring between CG islands.
+
+We can plot the frequency of relative CG Island locations across HM450K array
+probes as follows:
 
 ```{r}
 dfp <- as.data.frame(table(man$Relation_to_Island))
@@ -244,7 +265,7 @@ ggplot(dfp, aes(x = Var1, y = Freq, fill = Var1)) + theme_bw() +
 ```
 
 It is also easy to add the "genic" information, or whether a probe maps to a gene,
-alongside the CpG Island annotations, as follows:
+alongside the CG Island annotations, as follows:
 
 ```{r}
 dfp <- as.data.frame(table(man$Relation_to_Island, man$UCSC_RefGene_Name==""))
@@ -259,9 +280,12 @@ ggplot(dfp, aes(x = region, y = Freq, fill = Var1)) + theme_bw() +
 # Conclusions
 
 This vignette described practical uses for the platform-specific, manifest-based 
-annotations for CpG probes on HM450K and EPIC platforms. Additional resources, 
-information, and guidance for analyzing compilations of DNAm array datasets can 
-be found in the following vignettes:
+annotations for CpG probes on HM450K and EPIC platforms. 
 
-* [`recountmethylation`] R/Bioconductor package documentation 
-* [`minfi`]() R/Bioconductor package and documentation
+Additional resources, information, and guidance for analyzing compilations of 
+DNAm array datasets can be found in the following vignettes:
+
+* [`recountmethylation`](https://bioconductor.org/packages/release/bioc/html/recountmethylation.html) R/Bioconductor package documentation 
+* [`minfi`](https://bioconductor.org/packages/release/bioc/html/minfi.html) R/Bioconductor package and documentation
+* [Illumina's EPIC array documentation](https://support.illumina.com/array/array_kits/infinium-methylationepic-beadchip-kit/downloads.html) This official resource includes helpful descriptions of manifest
+columns in the file called `infinium-methylationepic-manifest-column-headings.pdf`.
