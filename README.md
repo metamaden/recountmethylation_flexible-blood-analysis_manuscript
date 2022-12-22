@@ -2,11 +2,9 @@
 
 Supplemental materials for the manuscript "`recountmethylation` accelerates analyses of human DNA methylation array data across platforms, studies, and blood sample types.". It is organized as follows:
 
-* method: Scripts for performing QC, preprocessing, and data prep using the DNAm array data compilations.
-* results: Scripts for making the tables and figures, including supplemental materials, for the final manuscript.
-* data: Tables (e.g. `.csv` files) and R data objects (e.g. `.rda` files) for reproducing methods and results in the final manuscript.
-
-
+* `./methods`: Scripts for performing QC, preprocessing, and data prep using the DNAm array data compilations.
+* `./results`: Scripts for making the tables and figures, including supplemental materials, for the final manuscript.
+* `./data`: Tables (e.g. `.csv` files) and R data objects (e.g. `.rda` files) for reproducing methods and results in the final manuscript.
 
 **Preprint citation:** 
 
