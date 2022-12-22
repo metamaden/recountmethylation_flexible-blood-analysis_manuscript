@@ -52,6 +52,9 @@ which.gran.remove <- md$gran.num >= gran.limit
 md <- md[!which.gran.remove,]
 gr <- gr[,rownames(md)]
 dim(gr) # 416045    580
+table(gr$predsex)
+# F   M 
+# 357 223
 
 #-----------------------
 # write the mvals matrix
