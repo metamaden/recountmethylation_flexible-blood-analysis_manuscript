@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/401501606.svg)](https://zenodo.org/badge/latestdoi/401501606)
+
 # recountmethylation_v2_manuscript
 
 Supplemental materials for the manuscript "`recountmethylation` accelerates analyses of human DNA methylation array data across platforms, studies, and blood sample types.". It is organized as follows:
