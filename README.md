@@ -10,4 +10,4 @@ Supplemental materials for the manuscript ***recountmethylation enables flexible
 
 **Preprint citation:** 
 
-* "recountmethylation enables flexible analysis of public blood DNA methylation array data". Sean K. Maden, Brian Walsh, Kyle Ellrott, Kasper D. Hansen, Reid F. Thompson, Abhinav Nellore. bioRxiv 2022.05.19.492680; doi: [https://doi.org/10.1101/2022.05.19.492680](https://www.biorxiv.org/content/10.1101/2022.05.19.492680v1)
+* ["recountmethylation enables flexible analysis of public blood DNA methylation array data". Sean K. Maden, Brian Walsh, Kyle Ellrott, Kasper D. Hansen, Reid F. Thompson, Abhinav Nellore. bioRxiv 2022.05.19.492680; doi: https://doi.org/10.1101/2022.05.19.492680](https://www.biorxiv.org/content/10.1101/2022.05.19.492680v1)
