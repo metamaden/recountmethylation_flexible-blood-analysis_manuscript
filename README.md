@@ -2,7 +2,7 @@
 
 # recountmethylation_v2_manuscript
 
-Supplemental materials for the manuscript "`recountmethylation` accelerates analyses of human DNA methylation array data across platforms, studies, and blood sample types.". It is organized as follows:
+Supplemental materials for the manuscript **recountmethylation enables flexible analysis of public blood DNA methylation array data**. It is organized as follows:
 
 * `./methods`: Scripts for performing QC, preprocessing, and data prep using the DNAm array data compilations.
 * `./results`: Scripts for making the tables and figures, including supplemental materials, for the final manuscript.
